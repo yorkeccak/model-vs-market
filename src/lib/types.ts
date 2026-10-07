@@ -41,11 +41,9 @@ export type BoardRow = {
 
 export type BoardSnapshot = { at: number; rows: BoardRow[] };
 
-
 export type AnalyzeEvent =
   | { t: "market"; market: Market | null }
   | { t: "sources"; sources: PublicSource[] }
   | { t: "step"; model: ModelId; k: number; pred: Prediction }
   | { t: "error"; model?: ModelId; message: string }
   | { t: "done" };
-

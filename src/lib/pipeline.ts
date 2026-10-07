@@ -86,7 +86,12 @@ export async function rememberMarkets(markets: Market[]) {
   await Promise.all(markets.map((m) => kv.set(`m:${m.id}`, m, { ttl: DAY })));
 }
 
-const normalise = (q: string) => q.toLowerCase().replace(/\s+/g, " ").replace(/[?!.\s]+$/, "").trim();
+const normalise = (q: string) =>
+  q
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(/[?!.\s]+$/, "")
+    .trim();
 
 export function analyzeKey(input: { marketId?: string; question?: string }) {
   const raw = input.marketId ? `m:${input.marketId}` : `q:${normalise(input.question ?? "")}`;
@@ -115,7 +120,8 @@ async function matchMarket(question: string): Promise<Market | null> {
         {
           type: "choice",
           name: "market",
-          instructions: "Which prediction market asks essentially the same yes/no question as the user (same event, same deadline give or take)? Pick none if no market matches.",
+          instructions:
+            "Which prediction market asks essentially the same yes/no question as the user (same event, same deadline give or take)? Pick none if no market matches.",
           choices: [
             ...candidates.map((m) => ({ value: m.id, description: `${m.question} (resolves ${m.endDate.slice(0, 10)})` })),
             { value: "none", description: "None of these match the user's question." },

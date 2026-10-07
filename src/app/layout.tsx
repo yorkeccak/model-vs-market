@@ -39,7 +39,8 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: SITE_TITLE,
-    description: "OpenAI, TypeSafe and Cloudflare's decision models read the news, never the odds. See where they disagree with real money.",
+    description:
+      "OpenAI, TypeSafe and Cloudflare's decision models read the news, never the odds. See where they disagree with real money.",
   },
   robots: { index: true, follow: true, googleBot: { index: true, follow: true, "max-image-preview": "large" } },
 };

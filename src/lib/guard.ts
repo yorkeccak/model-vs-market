@@ -26,8 +26,8 @@ export async function allow(subject: string, limits: Limit[]): Promise<boolean> 
 
 // Uncached analyses cost real money (search + 27 model calls). Per IP, and a global daily cap.
 export const ANALYZE_LIMITS: Limit[] = [
-  { name: "analyze-10m", limit: 6, windowSec: 600 },
-  { name: "analyze-day", limit: 25, windowSec: 86_400 },
+  { name: "analyze-10m", limit: 30, windowSec: 600 },
+  { name: "analyze-day", limit: 200, windowSec: 86_400 },
 ];
-export const SEARCH_LIMITS: Limit[] = [{ name: "search-1m", limit: 60, windowSec: 60 }];
-export const DAILY_ANALYZE_BUDGET = Number(process.env.MAX_DAILY_ANALYSES ?? 2000);
+export const SEARCH_LIMITS: Limit[] = [{ name: "search-1m", limit: 100, windowSec: 60 }];
+export const DAILY_ANALYZE_BUDGET = Number(process.env.MAX_DAILY_ANALYSES ?? 10_000);

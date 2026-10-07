@@ -18,7 +18,9 @@ export function Detail({ target, onClose }: { target: DetailTarget; onClose: () 
   const [market, setMarket] = useState<Market | null | undefined>("market" in target ? target.market : undefined);
   const [sources, setSources] = useState<PublicSource[] | null>(null);
   const [steps, setSteps] = useState<Steps>({ decisions: [], jev: [], clef: [] });
-  const [errors, setErrors] = useState<string[]>([]);
+  const [fatal, setFatal] = useState<string | null>(null);
+  const [skipped, setSkipped] = useState<ModelId[]>([]);
+  const [attempt, setAttempt] = useState(0);
   const [done, setDone] = useState(false);
   const [play, setPlay] = useState(-1);
   const [auto, setAuto] = useState(true);
@@ -31,7 +33,11 @@ export function Detail({ target, onClose }: { target: DetailTarget; onClose: () 
     startedAt.current = performance.now();
     (async () => {
       try {
-        for await (const e of streamEvents<AnalyzeEvent>("/api/analyze", "market" in target ? { marketId: target.market.id } : { question: target.question }, ac.signal)) {
+        for await (const e of streamEvents<AnalyzeEvent>(
+          "/api/analyze",
+          "market" in target ? { marketId: target.market.id } : { question: target.question },
+          ac.signal,
+        )) {
           if (e.t === "market") setMarket(e.market);
           else if (e.t === "sources") setSources(e.sources);
           else if (e.t === "step")
@@ -40,19 +46,31 @@ export function Detail({ target, onClose }: { target: DetailTarget; onClose: () 
               next[e.model][e.k] = e.pred;
               return next;
             });
-          else if (e.t === "error") setErrors((x) => [...x, e.model ? `${MODEL_META[e.model].name}: ${e.message}` : e.message]);
-          else if (e.t === "done") {
+          else if (e.t === "error") {
+            if (e.model) setSkipped((x) => [...x, e.model!]);
+            else setFatal(e.message);
+          } else if (e.t === "done") {
             setDone(true);
             setPlay(0);
             setElapsed(performance.now() - startedAt.current);
           }
         }
       } catch (err) {
-        if (!ac.signal.aborted) setErrors((x) => [...x, (err as Error).message]);
+        if (!ac.signal.aborted) setFatal((err as Error).message);
       }
     })();
     return () => ac.abort();
-  }, [target]);
+  }, [target, attempt]);
+
+  const retry = () => {
+    setFatal(null);
+    setSkipped([]);
+    setSources(null);
+    setSteps({ decisions: [], jev: [], clef: [] });
+    setDone(false);
+    setPlay(-1);
+    setAttempt((a) => a + 1);
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -109,7 +127,10 @@ export function Detail({ target, onClose }: { target: DetailTarget; onClose: () 
   const verdict = (() => {
     if (avg === null) return null;
     const spread = Math.max(...finals) - Math.min(...finals);
-    if (!market) return spread > 0.3 ? "The models can't agree, and there's no live market to settle it." : `The models put this at ${Math.round(avg * 100)}%.`;
+    if (!market)
+      return spread > 0.3
+        ? "The models can't agree, and there's no live market to settle it."
+        : `The models put this at ${Math.round(avg * 100)}%.`;
     const gap = Math.round((avg - market.price) * 100);
     if (Math.abs(gap) < 8) return "Models and money roughly agree.";
     if (spread > 0.35) return `The models split, but on average sit ${Math.abs(gap)} points ${gap > 0 ? "above" : "below"} the market.`;
@@ -119,7 +140,9 @@ export function Detail({ target, onClose }: { target: DetailTarget; onClose: () 
   const share = () => {
     const lines = [
       market ? `${market.venue === "kalshi" ? "Kalshi" : "Polymarket"} ${Math.round(market.price * 100)}%` : null,
-      ...MODELS.map((m) => (at(m, n) !== undefined ? `${MODEL_META[m].maker} ${MODEL_META[m].name} ${Math.round(at(m, n)! * 100)}%` : null)),
+      ...MODELS.map((m) =>
+        at(m, n) !== undefined ? `${MODEL_META[m].maker} ${MODEL_META[m].name} ${Math.round(at(m, n)! * 100)}%` : null,
+      ),
     ].filter(Boolean);
     const text = `${question}\n\n${lines.join("\n")}\n\n${SITE_URL.replace(/^https?:\/\//, "")}`;
     window.open(`https://x.com/intent/post?text=${encodeURIComponent(text)}`, "_blank", "noopener");
@@ -132,48 +155,117 @@ export function Detail({ target, onClose }: { target: DetailTarget; onClose: () 
   };
 
   return (
-    <motion.div className="absolute inset-0 grid grid-rows-[auto_minmax(0,1fr)_auto]" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.25 }}>
+    <motion.div
+      className="absolute inset-0 grid grid-rows-[auto_minmax(0,1fr)_auto]"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.25 }}
+    >
       {/* header: question + live readouts */}
       <div className="flex flex-wrap items-end gap-x-8 gap-y-3 border-b border-[var(--line)] px-4 py-4 md:px-6">
         <div className="min-w-0 flex-1 basis-[420px]">
-          <button onClick={onClose} className="press mb-2 inline-flex items-center gap-1.5 rounded-full text-[13px] text-[var(--muted)] hover:text-[var(--text)]">
+          <button
+            onClick={onClose}
+            className="press mb-2 inline-flex items-center gap-1.5 rounded-full text-[13px] text-[var(--muted)] hover:text-[var(--text)]"
+          >
             ← Back <span className="text-[var(--dim)]">esc</span>
           </button>
           <div className="flex items-center gap-3">
             {market && <MarketIcon market={market} size={42} />}
             <div className="min-w-0">
               <h2 className="line-clamp-2 text-[22px] leading-[1.15] font-semibold tracking-[-0.02em] md:text-[28px]">{question}</h2>
-              <div className="mt-1 flex items-center gap-1.5 text-[13px] text-[var(--muted)]">{market === undefined ? <span className="dots">Looking for a matching market</span> : market ? <><VenueBadge venue={market.venue} /> {market.endDate && <span className="text-[var(--dim)]">· Resolves {new Date(market.endDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>}</> : "Your question · no live market matches it"}</div>
+              <div className="mt-1 flex items-center gap-1.5 text-[13px] text-[var(--muted)]">
+                {market === undefined ? (
+                  fatal ? (
+                    "Your question"
+                  ) : (
+                    <span className="dots">Looking for a matching market</span>
+                  )
+                ) : market ? (
+                  <>
+                    <VenueBadge venue={market.venue} />{" "}
+                    {market.endDate && (
+                      <span className="text-[var(--dim)]">
+                        · Resolves{" "}
+                        {new Date(market.endDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                      </span>
+                    )}
+                  </>
+                ) : (
+                  "Your question · no live market matches it"
+                )}
+              </div>
             </div>
           </div>
         </div>
         <div className="grid grid-cols-4">
-          <Readout label="Market" color={COLOR.market} value={market ? market.price : undefined} cents empty={market === null ? "n/a" : undefined} />
+          <Readout
+            label="Market"
+            color={COLOR.market}
+            value={market ? market.price : undefined}
+            cents
+            empty={market === null ? "n/a" : undefined}
+          />
           {MODELS.map((m) => (
-            <Readout key={m} model={m} label={MODEL_META[m].name} color={COLOR[m]} value={play >= 0 ? at(m, cursor) : undefined} pending={!done} />
+            <Readout
+              key={m}
+              model={m}
+              label={MODEL_META[m].name}
+              color={COLOR[m]}
+              value={play >= 0 ? at(m, cursor) : undefined}
+              pending={!done}
+            />
           ))}
         </div>
       </div>
 
       {/* body: chart and what they read, side by side */}
-      <div className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto] md:grid-cols-[minmax(0,1fr)_380px] md:grid-rows-1">
-        <div className="relative min-h-[260px] md:border-r md:border-[var(--line)]">
-          <Chart n={n} sources={sources} market={market?.price ?? null} play={play} done={done} at={at} delta={delta} onScrub={scrub} />
+      {fatal ? (
+        <ErrorState message={fatal} onRetry={retry} onBack={onClose} />
+      ) : (
+        <div className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto] md:grid-cols-[minmax(0,1fr)_380px] md:grid-rows-1">
+          <div className="relative min-h-[260px] md:border-r md:border-[var(--line)]">
+            <Chart n={n} sources={sources} market={market?.price ?? null} play={play} done={done} at={at} delta={delta} onScrub={scrub} />
+          </div>
+          <Sources sources={sources} play={play} done={done} biggest={biggest} delta={delta} onScrub={scrub} />
         </div>
-        <Sources sources={sources} play={play} done={done} biggest={biggest} delta={delta} onScrub={scrub} />
-      </div>
+      )}
 
       {/* footer: verdict + actions */}
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-[var(--line)] px-4 py-3 md:px-6">
         <div className="min-w-0 flex-1 text-[18px] font-medium">
           <AnimatePresence mode="wait">
             {play >= n && verdict ? (
-              <motion.span key="v" className="block" initial={{ opacity: 0, y: 6, filter: "blur(4px)" }} animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}>
+              <motion.span
+                key="v"
+                className="block"
+                initial={{ opacity: 0, y: 6, filter: "blur(4px)" }}
+                animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+              >
                 {verdict}
               </motion.span>
             ) : (
-              <motion.span key="s" className="block text-[14px] text-[var(--muted)]" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                {errors.length ? <span className="text-[var(--clef)]">{errors.join(" · ")}</span> : done ? "Use ← → to step through the evidence" : <span className="dots">{sources ? `${n} articles found. Asking 3 models ${(n + 1) * 3} times` : "Searching the news with Valyu"}</span>}
+              <motion.span
+                key="s"
+                className="block text-[14px] text-[var(--muted)]"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+              >
+                {fatal ? (
+                  ""
+                ) : done ? (
+                  skipped.length ? (
+                    `${[...new Set(skipped)].map((m) => `${MODEL_META[m].maker} ${MODEL_META[m].name}`).join(" and ")} couldn't answer this one.`
+                  ) : (
+                    "Use ← → to step through the evidence"
+                  )
+                ) : (
+                  <span className="dots">
+                    {sources ? `${n} articles found. Asking 3 models ${(n + 1) * 3} times` : "Searching the news with Valyu"}
+                  </span>
+                )}
               </motion.span>
             )}
           </AnimatePresence>
@@ -196,11 +288,20 @@ export function Detail({ target, onClose }: { target: DetailTarget; onClose: () 
             </button>
           )}
           {market && (
-            <a href={market.url} target="_blank" rel="noreferrer" className="press rounded-full px-3 py-1.5 text-[13.5px] text-[var(--muted)] hover:bg-white/5 hover:text-[var(--text)]">
+            <a
+              href={market.url}
+              target="_blank"
+              rel="noreferrer"
+              className="press rounded-full px-3 py-1.5 text-[13.5px] text-[var(--muted)] hover:bg-white/5 hover:text-[var(--text)]"
+            >
               Open on {market.venue === "kalshi" ? "Kalshi" : "Polymarket"} ↗
             </a>
           )}
-          <button onClick={share} disabled={!done} className="press rounded-full bg-[var(--text)] px-4 py-1.5 text-[13.5px] font-medium text-[var(--bg)] hover:bg-white disabled:opacity-30">
+          <button
+            onClick={share}
+            disabled={!done}
+            className="press rounded-full bg-[var(--text)] px-4 py-1.5 text-[13.5px] font-medium text-[var(--bg)] hover:bg-white disabled:opacity-30"
+          >
             Share result
           </button>
         </div>
@@ -209,7 +310,22 @@ export function Detail({ target, onClose }: { target: DetailTarget; onClose: () 
   );
 }
 
-function Readout({ model, label, color, value, pending, empty }: { model?: ModelId; label: string; color: string; value: number | undefined; cents?: boolean; pending?: boolean; empty?: string }) {
+function Readout({
+  model,
+  label,
+  color,
+  value,
+  pending,
+  empty,
+}: {
+  model?: ModelId;
+  label: string;
+  color: string;
+  value: number | undefined;
+  cents?: boolean;
+  pending?: boolean;
+  empty?: string;
+}) {
   return (
     <div className="min-w-[88px] border-l border-[var(--line)] px-4 first:border-l-0 md:min-w-[108px]">
       <div className="flex items-center gap-1.5 text-[13px] text-[var(--muted)]">
@@ -217,7 +333,11 @@ function Readout({ model, label, color, value, pending, empty }: { model?: Model
         {label}
       </div>
       <div className="num mt-0.5 h-[40px] text-[34px] leading-[40px] font-medium tracking-[-0.03em]" style={{ color }}>
-        {value !== undefined ? <Ticker value={value * 100} duration={0.7} format={(v) => `${Math.round(v)}%`} /> : <span className={`text-[var(--dim)] ${pending ? "animate-pulse" : ""}`}>{empty ?? "--"}</span>}
+        {value !== undefined ? (
+          <Ticker value={value * 100} duration={0.7} format={(v) => `${Math.round(v)}%`} />
+        ) : (
+          <span className={`text-[var(--dim)] ${pending ? "animate-pulse" : ""}`}>{empty ?? "--"}</span>
+        )}
       </div>
     </div>
   );
@@ -294,7 +414,14 @@ function Chart({ n, sources, market, play, done, at, delta, onScrub }: ChartProp
         <svg width={w} height={h} className="absolute inset-0 block">
           <defs>
             <clipPath id="reveal">
-              <motion.rect x={0} y={0} height={h} initial={{ width: PAD.l }} animate={{ width: ready ? x(cursor) + 1 : PAD.l }} transition={{ duration: play === 0 ? 0.5 : dur, ease }} />
+              <motion.rect
+                x={0}
+                y={0}
+                height={h}
+                initial={{ width: PAD.l }}
+                animate={{ width: ready ? x(cursor) + 1 : PAD.l }}
+                transition={{ duration: play === 0 ? 0.5 : dur, ease }}
+              />
             </clipPath>
             <clipPath id="logo-clip">
               <circle r="9" />
@@ -315,7 +442,18 @@ function Chart({ n, sources, market, play, done, at, delta, onScrub }: ChartProp
 
           {market !== null && (
             <g>
-              <motion.line x1={PAD.l} x2={w - PAD.r} y1={y(market)} y2={y(market)} stroke="var(--market)" strokeWidth="1.5" strokeDasharray="5 5" initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 0.9, ease }} />
+              <motion.line
+                x1={PAD.l}
+                x2={w - PAD.r}
+                y1={y(market)}
+                y2={y(market)}
+                stroke="var(--market)"
+                strokeWidth="1.5"
+                strokeDasharray="5 5"
+                initial={{ pathLength: 0 }}
+                animate={{ pathLength: 1 }}
+                transition={{ duration: 0.9, ease }}
+              />
               <text x={PAD.l + 8} y={y(market) - 8} className="num" fontSize="12" fontWeight="500" fill="var(--market)">
                 Market {Math.round(market * 100)}%
               </text>
@@ -323,7 +461,16 @@ function Chart({ n, sources, market, play, done, at, delta, onScrub }: ChartProp
           )}
 
           {/* playhead, reaching up into the callout */}
-          {ready && n > 0 && <motion.line y1={PAD.t - 18} y2={h - PAD.b + 6} stroke="rgba(235,231,222,0.35)" initial={false} animate={{ x1: x(cursor), x2: x(cursor) }} transition={{ duration: dur, ease }} />}
+          {ready && n > 0 && (
+            <motion.line
+              y1={PAD.t - 18}
+              y2={h - PAD.b + 6}
+              stroke="rgba(235,231,222,0.35)"
+              initial={false}
+              animate={{ x1: x(cursor), x2: x(cursor) }}
+              transition={{ duration: dur, ease }}
+            />
+          )}
 
           <g clipPath="url(#reveal)">
             {MODELS.map((m) => {
@@ -345,7 +492,15 @@ function Chart({ n, sources, market, play, done, at, delta, onScrub }: ChartProp
                   <circle r="10.5" fill="white" stroke={COLOR[m]} strokeWidth="2" />
                   <image href={MODEL_META[m].logo} x={-9} y={-9} width={18} height={18} clipPath="url(#logo-clip)" />
                 </motion.g>
-                <motion.text initial={false} animate={{ x: x(cursor) + 20, y: (labelY.get(m) ?? y(p)) + 4 }} transition={{ duration: dur, ease }} className="num" fontSize="12.5" fontWeight="600" fill={COLOR[m]}>
+                <motion.text
+                  initial={false}
+                  animate={{ x: x(cursor) + 20, y: (labelY.get(m) ?? y(p)) + 4 }}
+                  transition={{ duration: dur, ease }}
+                  className="num"
+                  fontSize="12.5"
+                  fontWeight="600"
+                  fill={COLOR[m]}
+                >
                   {Math.round(p * 100)}%
                 </motion.text>
               </g>
@@ -358,16 +513,29 @@ function Chart({ n, sources, market, play, done, at, delta, onScrub }: ChartProp
               const cy = h - PAD.b + 22;
               const state = !ready ? "idle" : k === cursor ? "now" : k < cursor ? "read" : "unread";
               return (
-                <g key={k} onClick={() => onScrub(k)} style={{ cursor: done ? "pointer" : "default" }} opacity={state === "unread" ? 0.3 : 1}>
+                <g
+                  key={k}
+                  onClick={() => onScrub(k)}
+                  style={{ cursor: done ? "pointer" : "default" }}
+                  opacity={state === "unread" ? 0.3 : 1}
+                >
                   <rect x={cx - 15} y={cy - 15} width={30} height={30} fill="transparent" />
                   {k === 0 ? (
                     <text x={cx} y={cy + 4} textAnchor="middle" fontSize="11.5" fill="var(--muted)">
                       Prior
                     </text>
                   ) : (
-                    <image href={`https://www.google.com/s2/favicons?domain=${encodeURIComponent(sources![k - 1].domain)}&sz=64`} x={cx - 8} y={cy - 8} width={16} height={16} />
+                    <image
+                      href={`https://www.google.com/s2/favicons?domain=${encodeURIComponent(sources![k - 1].domain)}&sz=64`}
+                      x={cx - 8}
+                      y={cy - 8}
+                      width={16}
+                      height={16}
+                    />
                   )}
-                  {state === "now" && <rect x={cx - 14} y={cy - 14} width={28} height={28} rx={8} fill="none" stroke="var(--text)" strokeWidth="1.5" />}
+                  {state === "now" && (
+                    <rect x={cx - 14} y={cy - 14} width={28} height={28} rx={8} fill="none" stroke="var(--text)" strokeWidth="1.5" />
+                  )}
                 </g>
               );
             })}
@@ -376,9 +544,22 @@ function Chart({ n, sources, market, play, done, at, delta, onScrub }: ChartProp
 
       {/* now-reading callout */}
       {ready && sources && (
-        <motion.div className="absolute top-3" initial={false} animate={{ left: calloutLeft }} transition={{ duration: dur, ease }} style={{ width: calloutW }}>
+        <motion.div
+          className="absolute top-3"
+          initial={false}
+          animate={{ left: calloutLeft }}
+          transition={{ duration: dur, ease }}
+          style={{ width: calloutW }}
+        >
           <AnimatePresence mode="popLayout" initial={false}>
-            <motion.div key={cursor} className="rounded-[14px] bg-[var(--surface-2)]/95 px-3.5 py-3 shadow-[0_0_0_1px_var(--line-2),0_16px_32px_-12px_rgba(0,0,0,0.6)] backdrop-blur" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.22 }}>
+            <motion.div
+              key={cursor}
+              className="rounded-[14px] bg-[var(--surface-2)]/95 px-3.5 py-3 shadow-[0_0_0_1px_var(--line-2),0_16px_32px_-12px_rgba(0,0,0,0.6)] backdrop-blur"
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.22 }}
+            >
               {src ? (
                 <>
                   <div className="flex items-center gap-2 text-[12.5px] text-[var(--muted)]">
@@ -402,7 +583,9 @@ function Chart({ n, sources, market, play, done, at, delta, onScrub }: ChartProp
                     <span key={m} className="flex items-center gap-1.5" style={{ color: COLOR[m] }}>
                       <ModelLogo model={m} size={14} />
                       {MODEL_META[m].name}
-                      <span className="font-medium text-[var(--text)]">{d === null ? `${Math.round((at(m, 0) ?? 0) * 100)}%` : d === 0 ? "±0" : `${d > 0 ? "▲" : "▼"}${Math.abs(d)}`}</span>
+                      <span className="font-medium text-[var(--text)]">
+                        {d === null ? `${Math.round((at(m, 0) ?? 0) * 100)}%` : d === 0 ? "±0" : `${d > 0 ? "▲" : "▼"}${Math.abs(d)}`}
+                      </span>
                     </span>
                   );
                 })}
@@ -415,7 +598,9 @@ function Chart({ n, sources, market, play, done, at, delta, onScrub }: ChartProp
       {!ready && w > 0 && (
         <div className="absolute inset-0 grid place-items-center">
           <div className="text-center">
-            <div className="text-[14px] text-[var(--muted)]">{sources === null ? "Searching the last 60 days of news" : `Asking 3 models ${(n + 1) * 3} times`}</div>
+            <div className="text-[14px] text-[var(--muted)]">
+              {sources === null ? "Searching the last 60 days of news" : `Asking 3 models ${(n + 1) * 3} times`}
+            </div>
             <div className="scan mx-auto mt-3 h-px w-56 rounded bg-[var(--line)]" />
           </div>
         </div>
@@ -424,7 +609,14 @@ function Chart({ n, sources, market, play, done, at, delta, onScrub }: ChartProp
   );
 }
 
-type SourcesProps = { sources: PublicSource[] | null; play: number; done: boolean; biggest: number; delta: (m: ModelId, k: number) => number; onScrub: (k: number) => void };
+type SourcesProps = {
+  sources: PublicSource[] | null;
+  play: number;
+  done: boolean;
+  biggest: number;
+  delta: (m: ModelId, k: number) => number;
+  onScrub: (k: number) => void;
+};
 
 function Sources({ sources, play, done, biggest, delta, onScrub }: SourcesProps) {
   return (
@@ -450,7 +642,12 @@ function Sources({ sources, play, done, biggest, delta, onScrub }: SourcesProps)
               const k = i + 1;
               const state = play < 0 ? "idle" : play === k ? "now" : play > k ? "read" : "unread";
               return (
-                <motion.li key={s.url + i} initial={{ opacity: 0, x: 10 }} animate={{ opacity: state === "unread" ? 0.35 : 1, x: 0 }} transition={{ delay: play < 0 ? i * 0.06 : 0, duration: 0.3 }}>
+                <motion.li
+                  key={s.url + i}
+                  initial={{ opacity: 0, x: 10 }}
+                  animate={{ opacity: state === "unread" ? 0.35 : 1, x: 0 }}
+                  transition={{ delay: play < 0 ? i * 0.06 : 0, duration: 0.3 }}
+                >
                   <a
                     href={s.url}
                     target="_blank"
@@ -459,15 +656,26 @@ function Sources({ sources, play, done, biggest, delta, onScrub }: SourcesProps)
                     className="relative flex items-start gap-3 rounded-xl px-3 py-2.5 transition-colors duration-150 hover:bg-white/[0.04]"
                     style={{ background: state === "now" ? "rgba(255,255,255,0.06)" : undefined }}
                   >
-                    {state === "now" && <motion.span layoutId="now-bar" className="absolute top-2.5 bottom-2.5 left-0 w-[3px] rounded-full bg-[var(--text)]" transition={{ duration: 0.25 }} />}
+                    {state === "now" && (
+                      <motion.span
+                        layoutId="now-bar"
+                        className="absolute top-2.5 bottom-2.5 left-0 w-[3px] rounded-full bg-[var(--text)]"
+                        transition={{ duration: 0.25 }}
+                      />
+                    )}
                     <Fav domain={s.domain} size={16} className="mt-0.5" />
                     <span className="min-w-0 flex-1">
                       <span className="line-clamp-2 text-[14px] leading-snug">{s.title}</span>
                       <span className="mt-1 flex items-center gap-2 text-[12.5px] text-[var(--dim)]">
                         <span className="truncate">
-                          {s.domain} · {s.date ? new Date(s.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "undated"}
+                          {s.domain} ·{" "}
+                          {s.date ? new Date(s.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "undated"}
                         </span>
-                        {k === biggest && <span className="shrink-0 rounded-full bg-[var(--text)] px-2 py-px text-[11.5px] font-medium text-[var(--bg)]">Biggest move</span>}
+                        {k === biggest && (
+                          <span className="shrink-0 rounded-full bg-[var(--text)] px-2 py-px text-[11.5px] font-medium text-[var(--bg)]">
+                            Biggest move
+                          </span>
+                        )}
                       </span>
                     </span>
                     {done && (
@@ -487,8 +695,52 @@ function Sources({ sources, play, done, biggest, delta, onScrub }: SourcesProps)
                 </motion.li>
               );
             })}
-        {sources?.length === 0 && <li className="px-3 py-3 text-[14px] text-[var(--muted)]">No recent articles found. The models are working from base rates alone.</li>}
+        {sources?.length === 0 && (
+          <li className="px-3 py-3 text-[14px] text-[var(--muted)]">
+            No recent articles found. The models are working from base rates alone.
+          </li>
+        )}
       </ol>
     </div>
+  );
+}
+
+function ErrorState({ message, onRetry, onBack }: { message: string; onRetry: () => void; onBack: () => void }) {
+  return (
+    <motion.div
+      className="grid min-h-0 place-items-center p-8"
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+    >
+      <div className="max-w-[440px] text-center">
+        <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-[var(--surface-2)] text-[var(--clef)] shadow-[inset_0_0_0_1px_var(--line)]">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden>
+            <path
+              d="M12 8v5m0 3.5v.01M10.3 3.9 2.6 17.2A2 2 0 0 0 4.3 20h15.4a2 2 0 0 0 1.7-2.8L13.7 3.9a2 2 0 0 0-3.4 0Z"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </div>
+        <p className="mt-4 text-[17px] leading-snug text-[var(--text)]">{message}</p>
+        <div className="mt-5 flex justify-center gap-2">
+          <button
+            onClick={onRetry}
+            className="press rounded-full bg-[var(--text)] px-4 py-2 text-[14px] font-medium text-[var(--bg)] hover:bg-white"
+          >
+            Try again
+          </button>
+          <button
+            onClick={onBack}
+            className="press rounded-full px-4 py-2 text-[14px] text-[var(--muted)] shadow-[inset_0_0_0_1px_var(--line-2)] hover:bg-white/5 hover:text-[var(--text)]"
+          >
+            Back to the board
+          </button>
+        </div>
+      </div>
+    </motion.div>
   );
 }

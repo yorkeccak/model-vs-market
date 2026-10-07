@@ -11,6 +11,8 @@ export const COLOR: Record<ModelId | "market", string> = {
 // quietly instead of throwing, so unmounts never surface as errors.
 export async function* streamEvents<T>(url: string, body: unknown, signal?: AbortSignal): AsyncGenerator<T> {
   const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body ?? {}) });
+  // Our routes always answer in NDJSON; anything else (e.g. the edge firewall's 429) gets a plain message.
+  if (!res.headers.get("content-type")?.includes("ndjson")) throw new Error(friendlyStatus(res.status));
   if (!res.body || signal?.aborted) return;
   const reader = res.body.getReader();
   const onAbort = () => reader.cancel().catch(() => {});
@@ -32,6 +34,12 @@ export async function* streamEvents<T>(url: string, body: unknown, signal?: Abor
   } finally {
     signal?.removeEventListener("abort", onAbort);
   }
+}
+
+export function friendlyStatus(status: number) {
+  if (status === 429) return "You're going a bit fast. Give it a minute and try again.";
+  if (status >= 500) return "Something went wrong on our side. Try again in a moment.";
+  return "That didn't work. Try again.";
 }
 
 export type Preds = Partial<Record<ModelId, Prediction | { error: string }>>;

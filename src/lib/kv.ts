@@ -8,9 +8,8 @@ type Store = {
   delete(key: string): Promise<void>;
 };
 
-// Locally there's no Runtime Cache endpoint, and getCache's in-memory fallback is
-// per bundle (pages and route handlers would each get their own), so use one
-// process-wide map instead.
+// Outside Vercel there's no Runtime Cache, and getCache's in-memory fallback is per
+// bundle (pages and route handlers would each get their own), so use one process-wide map.
 function localStore(): Store {
   const g = globalThis as unknown as { __mvmKv?: Map<string, { value: unknown; expires: number }> };
   const map = (g.__mvmKv ??= new Map());

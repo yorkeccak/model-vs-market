@@ -9,7 +9,8 @@ const inflight = new Map<string, Promise<AnalyzeEvent[]>>();
 
 const encoder = new TextEncoder();
 const line = (e: AnalyzeEvent) => encoder.encode(JSON.stringify(e) + "\n");
-const ndjson = (body: BodyInit, status = 200) => new Response(body, { status, headers: { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-store" } });
+const ndjson = (body: BodyInit, status = 200) =>
+  new Response(body, { status, headers: { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-store" } });
 
 function replay(events: AnalyzeEvent[], status = 200) {
   return ndjson(new Blob(events.map((e) => JSON.stringify(e) + "\n")), status);
@@ -33,8 +34,10 @@ export async function POST(req: Request) {
   if (marketId && !market) return fail("That market isn't available any more. Pick one from the board or search again.", 404);
 
   // Only uncached runs cost money, so only they count against the limits.
-  if (!(await allow(clientIp(req), ANALYZE_LIMITS))) return fail("You've asked a lot of new questions. Give it a few minutes, or open any market on the board (those are instant).", 429);
-  if (!(await allow("global", [{ name: "analyze-budget", limit: DAILY_ANALYZE_BUDGET, windowSec: 86_400 }]))) return fail("We've hit today's limit for new questions. Markets on the board still work.", 503);
+  if (!(await allow(clientIp(req), ANALYZE_LIMITS)))
+    return fail("You've asked a lot of new questions. Give it a few minutes, or open any market on the board (those are instant).", 429);
+  if (!(await allow("global", [{ name: "analyze-budget", limit: DAILY_ANALYZE_BUDGET, windowSec: 86_400 }])))
+    return fail("We've hit today's limit for new questions. Markets on the board still work.", 503);
 
   const events: AnalyzeEvent[] = [];
   let finish: (e: AnalyzeEvent[]) => void = () => {};

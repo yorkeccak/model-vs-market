@@ -25,7 +25,8 @@ type GammaMarket = {
 };
 
 // Single-game sports/esports lines resolve in hours and have no news to read.
-const SPORTS = /\bvs\.?\b|\bBO\d\b|game \d|map \d|o\/u|spread|handicap|total (goals|points|kills)|up or down|\b\d{1,2}(:\d\d)?\s?(am|pm)\b/i;
+const SPORTS =
+  /\bvs\.?\b|\bBO\d\b|game \d|map \d|o\/u|spread|handicap|total (goals|points|kills)|up or down|\b\d{1,2}(:\d\d)?\s?(am|pm)\b/i;
 
 function fromGamma(m: GammaMarket, eventSlug?: string): Market | null {
   try {
@@ -49,7 +50,9 @@ function fromGamma(m: GammaMarket, eventSlug?: string): Market | null {
 }
 
 export async function topMarkets(n: number): Promise<Market[]> {
-  const res = await fetch(`${GAMMA}/markets?active=true&closed=false&order=volume24hr&ascending=false&limit=400`, { signal: AbortSignal.timeout(10_000) });
+  const res = await fetch(`${GAMMA}/markets?active=true&closed=false&order=volume24hr&ascending=false&limit=400`, {
+    signal: AbortSignal.timeout(10_000),
+  });
   const raw: GammaMarket[] = await res.json();
   const now = Date.now();
   const seenEvents = new Set<string>();
@@ -70,10 +73,17 @@ export async function topMarkets(n: number): Promise<Market[]> {
 }
 
 async function searchPolymarket(q: string): Promise<Market[]> {
-  const res = await fetch(`${GAMMA}/public-search?q=${encodeURIComponent(q)}&limit_per_type=8&events_status=active&keep_closed_markets=0`, { signal: AbortSignal.timeout(5_000) });
+  const res = await fetch(`${GAMMA}/public-search?q=${encodeURIComponent(q)}&limit_per_type=8&events_status=active&keep_closed_markets=0`, {
+    signal: AbortSignal.timeout(5_000),
+  });
   if (!res.ok) return [];
   const json: { events?: { slug: string; markets?: GammaMarket[] }[] } = await res.json();
-  return (json.events ?? []).flatMap((e) => (e.markets ?? []).filter((m) => !m.closed).map((m) => fromGamma(m, e.slug)).filter((m): m is Market => !!m && m.price > 0.005 && m.price < 0.995));
+  return (json.events ?? []).flatMap((e) =>
+    (e.markets ?? [])
+      .filter((m) => !m.closed)
+      .map((m) => fromGamma(m, e.slug))
+      .filter((m): m is Market => !!m && m.price > 0.005 && m.price < 0.995),
+  );
 }
 
 // ---------- Kalshi ----------
@@ -100,7 +110,9 @@ type KalshiSeries = {
 
 async function searchKalshi(q: string): Promise<Market[]> {
   // Kalshi's public site search; the trade API has no text search.
-  const res = await fetch(`${KALSHI}/v1/search/series?query=${encodeURIComponent(q)}&order_by=querymatch&page_size=8`, { signal: AbortSignal.timeout(5_000) });
+  const res = await fetch(`${KALSHI}/v1/search/series?query=${encodeURIComponent(q)}&order_by=querymatch&page_size=8`, {
+    signal: AbortSignal.timeout(5_000),
+  });
   if (!res.ok) return [];
   const json: { current_page?: KalshiSeries[] } = await res.json();
   const out: Market[] = [];
@@ -135,7 +147,14 @@ export async function searchMarkets(q: string): Promise<Market[]> {
   // Skip intraday lines (15-minute crypto, "price today at 10am"): nothing to forecast.
   const horizon = Date.now() + 12 * 3600e3;
   const keep = (m: Market) => !m.endDate || Date.parse(m.endDate) > horizon;
-  const [pm, ks] = await Promise.all([searchPolymarket(q).then((r) => r.filter(keep)).catch(() => []), searchKalshi(q).then((r) => r.filter(keep)).catch(() => [])]);
+  const [pm, ks] = await Promise.all([
+    searchPolymarket(q)
+      .then((r) => r.filter(keep))
+      .catch(() => []),
+    searchKalshi(q)
+      .then((r) => r.filter(keep))
+      .catch(() => []),
+  ]);
   const out: Market[] = [];
   for (let i = 0; i < Math.max(pm.length, ks.length) && out.length < 12; i++) {
     if (pm[i]) out.push(pm[i]);
