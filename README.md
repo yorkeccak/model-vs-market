@@ -4,7 +4,7 @@ The best way to test AI decision models: make them predict the future.
 
 Three decision models (OpenAI Decisions, TypeSafe Jev, Cloudflare Clef) read recent news, never the odds, and put a probability on any question. The site compares them with live Polymarket and Kalshi prices and replays how each model changed its mind, article by article.
 
-![Model vs Market](docs/screenshot.png)
+![Model vs Market: three AI decision models priced against live prediction markets](docs/screenshot.png)
 
 ## Run it
 

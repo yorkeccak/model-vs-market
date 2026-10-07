@@ -1,12 +1,14 @@
 "use client";
 
 import { AnimatePresence, LayoutGroup, motion } from "motion/react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
 import { COLOR, consensus, okPreds, timeAgo, type Preds } from "@/lib/client";
 import { REPO_URL } from "@/lib/site";
 import { MODELS, MODEL_META, type BoardSnapshot, type Market, type PublicSource } from "@/lib/types";
 import { Detail, type DetailTarget } from "./Detail";
+import { ValyuLockup, ValyuMark } from "./ValyuLogo";
 import { Fav, MarketIcon, ModelLogo } from "./Icon";
 import { Rail } from "./Rail";
 import { Search } from "./Search";
@@ -90,13 +92,16 @@ export function Arena({ initial }: { initial: BoardSnapshot | null }) {
             <GitHubMark />
             <span className="hidden sm:inline">GitHub</span>
           </a>
-          <button
-            onClick={refresh}
-            disabled={refreshing}
-            className="press rounded-full px-3 py-1.5 text-[var(--text)] shadow-[inset_0_0_0_1px_var(--line-2)] hover:bg-white/5 disabled:text-[var(--dim)]"
+          <a
+            href="https://valyu.ai"
+            target="_blank"
+            rel="noreferrer"
+            aria-label="Powered by Valyu"
+            className="press inline-flex items-center gap-2 rounded-full bg-[var(--text)] px-3.5 py-1.5 text-[var(--bg)] hover:bg-white"
           >
-            Refresh
-          </button>
+            <span className="hidden text-[12.5px] sm:inline">Powered by</span>
+            <ValyuLockup className="h-[11px] w-auto" />
+          </a>
         </div>
       </header>
 
@@ -154,8 +159,14 @@ export function Arena({ initial }: { initial: BoardSnapshot | null }) {
 
       <footer className="flex h-11 items-center justify-between gap-4 text-[12.5px] text-[var(--dim)]">
         <span className="flex items-center gap-1.5">
-          News by <Fav domain="valyu.ai" size={13} />{" "}
-          <a href="https://valyu.ai" className="text-[var(--muted)] hover:text-[var(--text)]">
+          Search powered by
+          <a
+            href="https://valyu.ai"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 text-[var(--muted)] hover:text-[var(--text)]"
+          >
+            <ValyuMark className="h-3 w-3" />
             Valyu
           </a>
           <span className="hidden md:inline">· Models never see market prices · Not financial advice</span>
@@ -164,7 +175,7 @@ export function Arena({ initial }: { initial: BoardSnapshot | null }) {
           <Stat v={stats.articles} label="articles read" />
           <Stat v={stats.decisions} label="AI decisions" />
           <Stat v={stats.median} label="median" f={(v) => `${Math.round(v)}ms`} />
-          <Stat v={stats.cents} label="total cost" f={(v) => `${v.toFixed(2)}¢`} />
+          <Stat v={stats.cents} label="model cost" f={(v) => `${v.toFixed(2)}¢`} />
         </span>
       </footer>
     </main>
@@ -341,13 +352,7 @@ function Lane({ row, index, onOpen }: { row: Row; index: number; onOpen: () => v
 }
 
 function Mark() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 22 22" fill="none" aria-hidden>
-      <rect x="0.5" y="0.5" width="21" height="21" rx="7" fill="var(--surface-2)" stroke="var(--line-2)" />
-      <path d="M5 11h12" stroke="var(--text)" strokeOpacity="0.45" strokeDasharray="1.5 2" />
-      <path d="M5 14.5l3.2-4 2.6 2 3-5.5L17 9" stroke="var(--decisions)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
+  return <Image src="/logo.png" alt="" width={24} height={24} priority className="rounded-[7px]" />;
 }
 
 // Official GitHub mark (Octicons, MIT).
