@@ -3,7 +3,7 @@
 import { AnimatePresence, LayoutGroup, motion } from "motion/react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition, type CSSProperties } from "react";
 import { COLOR, consensus, okPreds, timeAgo, type Preds } from "@/lib/client";
 import { REPO_URL } from "@/lib/site";
 import { MODELS, MODEL_META, type BoardSnapshot, type Market, type PublicSource } from "@/lib/types";
@@ -63,7 +63,7 @@ export function Arena({ initial }: { initial: BoardSnapshot | null }) {
   const close = useCallback(() => setDetail(null), []);
 
   return (
-    <main className="mx-auto grid h-dvh max-w-[1440px] grid-rows-[auto_auto_minmax(0,1fr)_auto] overflow-hidden px-4 md:px-8">
+    <main className="mx-auto grid min-h-dvh max-w-[1440px] grid-rows-[auto_auto_auto_auto] px-4 md:h-dvh md:grid-rows-[auto_auto_minmax(0,1fr)_auto] md:overflow-hidden md:px-8">
       <header className="flex h-14 items-center justify-between">
         <button onClick={close} className="flex items-center gap-2.5 text-[15px] font-medium">
           <Mark />
@@ -118,11 +118,11 @@ export function Arena({ initial }: { initial: BoardSnapshot | null }) {
             >
               <div className="flex flex-wrap items-end justify-between gap-x-10 gap-y-2 pt-3 pb-5">
                 <div>
-                  <h1 className="rise text-[34px] leading-[1.02] font-semibold tracking-[-0.03em] md:text-[48px]">
+                  <h1 className="rise text-[30px] leading-[1.05] font-semibold tracking-[-0.03em] md:text-[48px]">
                     Can AI out-guess the market?
                   </h1>
                   <p
-                    className="rise mt-2 max-w-[600px] text-[15.5px] text-[var(--muted)] md:text-[17px]"
+                    className="rise mt-2 max-w-[600px] text-[15px] text-[var(--muted)] md:text-[17px]"
                     style={{ animationDelay: "0.1s" }}
                   >
                     Decision models from <Brand m="decisions" />, <Brand m="jev" /> and <Brand m="clef" /> read today&apos;s news, never the
@@ -138,14 +138,16 @@ export function Arena({ initial }: { initial: BoardSnapshot | null }) {
         </div>
       </section>
 
-      <section className="surface relative min-h-0 overflow-hidden rounded-[20px]">
+      <section
+        className={`surface relative overflow-hidden rounded-[20px] md:h-auto md:min-h-0 ${detail ? "h-[calc(100dvh-9rem)] min-h-[600px]" : ""}`}
+      >
         <AnimatePresence initial={false}>
           {detail ? (
             <Detail key={"market" in detail ? detail.market.id : detail.question} target={detail} onClose={close} />
           ) : (
             <motion.div
               key="field"
-              className="absolute inset-0"
+              className="md:absolute md:inset-0"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
@@ -204,19 +206,31 @@ function Field({ rows, onOpen }: { rows: Row[]; onOpen: (r: Row) => void }) {
   const [fit, setFit] = useState(8);
   useLayoutEffect(() => {
     const el = ref.current!;
-    const ro = new ResizeObserver(([e]) => setFit(Math.max(3, Math.floor(e.contentRect.height / (window.innerWidth < 768 ? 92 : 60)))));
+    const ro = new ResizeObserver(([e]) => setFit(window.innerWidth < 768 ? Infinity : Math.max(3, Math.floor(e.contentRect.height / 60))));
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
   const visible = rows.length ? rows.slice(0, fit) : null;
-  const count = visible?.length ?? Math.min(fit, 10);
+  const count = visible?.length ?? Math.min(fit, 8);
 
   return (
     <div className="field flex h-full flex-col">
       <div
-        className={`grid h-12 shrink-0 items-center gap-x-6 border-b border-[var(--line)] px-4 text-[13px] text-[var(--muted)] md:px-5 ${COLS}`}
+        className={`grid shrink-0 items-center gap-x-6 gap-y-2 border-b border-[var(--line)] px-4 py-3 text-[13px] text-[var(--muted)] md:h-12 md:px-5 md:py-0 ${COLS}`}
       >
         <span className="font-medium text-[var(--text)]">Most-traded questions right now</span>
+        <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] md:hidden">
+          <span className="flex items-center gap-1.5">
+            <span className="h-3 w-[2px] rounded-full bg-[var(--market)]" />
+            Market
+          </span>
+          {MODELS.map((m) => (
+            <span key={m} className="flex items-center gap-1.5">
+              <ModelLogo model={m} size={14} />
+              {MODEL_META[m].name}
+            </span>
+          ))}
+        </span>
         <span className="hidden items-center justify-between md:flex">
           <span className="num text-[var(--dim)]">0%</span>
           <span className="flex items-center gap-4">
@@ -238,11 +252,15 @@ function Field({ rows, onOpen }: { rows: Row[]; onOpen: (r: Row) => void }) {
         <span className="hidden text-right md:block">AI vs market</span>
       </div>
       <LayoutGroup>
-        <ol ref={ref} className="grid min-h-0 flex-1" style={{ gridTemplateRows: `repeat(${count}, minmax(0, 1fr))` }}>
+        <ol
+          ref={ref}
+          className="grid md:min-h-0 md:flex-1 md:[grid-template-rows:var(--rows)]"
+          style={{ "--rows": `repeat(${count}, minmax(0, 1fr))` } as CSSProperties}
+        >
           {visible
             ? visible.map((r, i) => <Lane key={r.market.id} row={r} index={i} onOpen={() => onOpen(r)} />)
             : Array.from({ length: count }).map((_, i) => (
-                <li key={i} className={`grid items-center gap-x-6 border-b border-[var(--line)] px-4 last:border-b-0 md:px-5 ${COLS}`}>
+                <li key={i} className={`grid h-[84px] items-center gap-x-6 border-b md:h-auto border-[var(--line)] px-4 last:border-b-0 md:px-5 ${COLS}`}>
                   <span className="flex items-center gap-3">
                     <span className="h-8 w-8 rounded-[9px] bg-white/[0.04]" />
                     <span className="scan h-3 w-3/4 rounded bg-white/[0.04]" style={{ animationDelay: `${i * 80}ms` }} />
@@ -275,13 +293,13 @@ function Lane({ row, index, onOpen }: { row: Row; index: number; onOpen: () => v
     >
       <button
         onClick={onOpen}
-        className={`grid h-full w-full grid-cols-[minmax(0,1fr)_auto] content-center items-center gap-x-6 gap-y-1.5 px-4 text-left md:px-5 ${COLS}`}
+        className={`grid h-full w-full grid-cols-[minmax(0,1fr)_auto] content-center items-center gap-x-4 gap-y-2 px-4 py-3 text-left md:gap-x-6 md:gap-y-1.5 md:px-5 md:py-0 ${COLS}`}
       >
         <span className="flex min-w-0 items-center gap-3">
           <MarketIcon market={market} size={34} />
           <span className="min-w-0">
             <span className="block truncate text-[15.5px] leading-tight font-medium">{market.question}</span>
-            <span className="num mt-1 flex items-center gap-1.5 text-[12.5px] text-[var(--dim)]">
+            <span className="num mt-1 flex items-center gap-1.5 overflow-hidden text-[12.5px] whitespace-nowrap text-[var(--dim)]">
               <span className="text-[var(--muted)]">
                 {Math.round(market.price * 100)}% on {market.venue === "kalshi" ? "Kalshi" : "Polymarket"}
               </span>
@@ -290,7 +308,7 @@ function Lane({ row, index, onOpen }: { row: Row; index: number; onOpen: () => v
                 <span className="dots">Reading the news</span>
               ) : (
                 <span className="flex items-center gap-1">
-                  <span className="flex">
+                  <span className="hidden sm:flex">
                     {sources.slice(0, 5).map((s, i) => (
                       <motion.span
                         key={s.domain + i}
@@ -303,7 +321,7 @@ function Lane({ row, index, onOpen }: { row: Row; index: number; onOpen: () => v
                       </motion.span>
                     ))}
                   </span>
-                  <span className="ml-1.5">{sources.length} articles</span>
+                  <span className="sm:ml-1.5">{sources.length} articles</span>
                 </span>
               )}
               <span className="hidden sm:inline">· Ends {end}</span>
