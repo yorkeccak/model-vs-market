@@ -30,6 +30,7 @@ function localStore(): Store {
 }
 
 // Vercel Runtime Cache: shared across function instances in a region, no keys or setup.
-export const kv: Store = process.env.RUNTIME_CACHE_ENDPOINT
+// On Vercel the cache comes from the request context, so getCache() resolves it per call.
+export const kv: Store = process.env.VERCEL
   ? getCache({ namespace: "mvm", keyHashFunction: (key) => createHash("sha256").update(key).digest("hex") })
   : localStore();
