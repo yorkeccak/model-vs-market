@@ -156,10 +156,10 @@ export function Detail({ target, onClose }: { target: DetailTarget; onClose: () 
 
   return (
     <motion.div
-      className="absolute inset-0 grid grid-rows-[auto_minmax(0,1fr)_auto]"
+      className="flex flex-col md:absolute md:inset-0 md:grid md:grid-rows-[auto_minmax(0,1fr)_auto]"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
+      exit={{ opacity: 0, transition: { duration: isPhone() ? 0 : 0.25 } }}
       transition={{ duration: 0.25 }}
     >
       {/* header: question + live readouts */}
@@ -199,7 +199,7 @@ export function Detail({ target, onClose }: { target: DetailTarget; onClose: () 
             </div>
           </div>
         </div>
-        <div className="grid grid-cols-4">
+        <div className="grid w-full grid-cols-4 md:w-auto">
           <Readout
             label="Market"
             color={COLOR.market}
@@ -224,8 +224,8 @@ export function Detail({ target, onClose }: { target: DetailTarget; onClose: () 
       {fatal ? (
         <ErrorState message={fatal} onRetry={retry} onBack={onClose} />
       ) : (
-        <div className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto] md:grid-cols-[minmax(0,1fr)_380px] md:grid-rows-1">
-          <div className="relative min-h-[260px] md:border-r md:border-[var(--line)]">
+        <div className="flex flex-col md:grid md:min-h-0 md:grid-cols-[minmax(0,1fr)_380px] md:grid-rows-1">
+          <div className="relative h-[300px] md:h-auto md:min-h-[260px] md:border-r md:border-[var(--line)]">
             <Chart n={n} sources={sources} market={market?.price ?? null} play={play} done={done} at={at} delta={delta} onScrub={scrub} />
           </div>
           <Sources sources={sources} play={play} done={done} biggest={biggest} delta={delta} onScrub={scrub} />
@@ -234,7 +234,7 @@ export function Detail({ target, onClose }: { target: DetailTarget; onClose: () 
 
       {/* footer: verdict + actions */}
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-[var(--line)] px-4 py-3 md:px-6">
-        <div className="min-w-0 flex-1 text-[18px] font-medium">
+        <div className="min-w-0 flex-1 basis-full text-[18px] font-medium md:basis-auto">
           <AnimatePresence mode="wait">
             {play >= n && verdict ? (
               <motion.span
@@ -259,7 +259,10 @@ export function Detail({ target, onClose }: { target: DetailTarget; onClose: () 
                   skipped.length ? (
                     `${[...new Set(skipped)].map((m) => `${MODEL_META[m].maker} ${MODEL_META[m].name}`).join(" and ")} couldn't answer this one.`
                   ) : (
-                    "Use ← → to step through the evidence"
+                    <>
+                      <span className="hidden md:inline">Use ← → to step through the evidence</span>
+                      <span className="md:hidden">Tap an article to see what moved each model</span>
+                    </>
                   )
                 ) : (
                   <span className="dots">
@@ -327,12 +330,16 @@ function Readout({
   empty?: string;
 }) {
   return (
-    <div className="min-w-[88px] border-l border-[var(--line)] px-4 first:border-l-0 md:min-w-[108px]">
-      <div className="flex items-center gap-1.5 text-[13px] text-[var(--muted)]">
-        {model ? <ModelLogo model={model} size={16} /> : <span className="mx-[7px] h-3.5 w-[2px] rounded-full bg-[var(--market)]" />}
-        {label}
+    <div className="min-w-0 border-l border-[var(--line)] px-2.5 first:border-l-0 first:pl-0 md:min-w-[108px] md:px-4 md:first:pl-4">
+      <div className="flex min-w-0 items-center gap-1.5 text-[12px] text-[var(--muted)] md:text-[13px]">
+        {model ? (
+          <ModelLogo model={model} size={16} className="shrink-0" />
+        ) : (
+          <span className="mx-[7px] h-3.5 w-[2px] shrink-0 rounded-full bg-[var(--market)]" />
+        )}
+        <span className="truncate">{label}</span>
       </div>
-      <div className="num mt-0.5 h-[40px] text-[34px] leading-[40px] font-medium tracking-[-0.03em]" style={{ color }}>
+      <div className="num mt-0.5 h-[40px] text-[28px] leading-[40px] font-medium tracking-[-0.03em] md:text-[34px]" style={{ color }}>
         {value !== undefined ? (
           <Ticker value={value * 100} duration={0.7} format={(v) => `${Math.round(v)}%`} />
         ) : (
@@ -744,3 +751,5 @@ function ErrorState({ message, onRetry, onBack }: { message: string; onRetry: ()
     </motion.div>
   );
 }
+
+const isPhone = () => typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches;

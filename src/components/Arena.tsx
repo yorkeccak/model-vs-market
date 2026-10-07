@@ -61,6 +61,9 @@ export function Arena({ initial }: { initial: BoardSnapshot | null }) {
   }, [rows]);
 
   const close = useCallback(() => setDetail(null), []);
+  useEffect(() => {
+    if (isPhone()) window.scrollTo({ top: 0 });
+  }, [detail]);
 
   return (
     <main className="mx-auto grid min-h-dvh max-w-[1440px] grid-rows-[auto_auto_auto_auto] px-4 md:h-dvh md:grid-rows-[auto_auto_minmax(0,1fr)_auto] md:overflow-hidden md:px-8">
@@ -139,7 +142,7 @@ export function Arena({ initial }: { initial: BoardSnapshot | null }) {
       </section>
 
       <section
-        className={`surface relative overflow-hidden rounded-[20px] md:h-auto md:min-h-0 ${detail ? "h-[calc(100dvh-9rem)] min-h-[600px]" : ""}`}
+        className="surface relative overflow-hidden rounded-[20px] md:min-h-0"
       >
         <AnimatePresence initial={false}>
           {detail ? (
@@ -150,7 +153,7 @@ export function Arena({ initial }: { initial: BoardSnapshot | null }) {
               className="md:absolute md:inset-0"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
+              exit={{ opacity: 0, transition: { duration: isPhone() ? 0 : 0.2 } }}
               transition={{ duration: 0.2 }}
             >
               <Field rows={ordered} onOpen={(r) => setDetail({ market: r.market })} />
@@ -298,7 +301,7 @@ function Lane({ row, index, onOpen }: { row: Row; index: number; onOpen: () => v
         <span className="flex min-w-0 items-center gap-3">
           <MarketIcon market={market} size={34} />
           <span className="min-w-0">
-            <span className="block truncate text-[15.5px] leading-tight font-medium">{market.question}</span>
+            <span className="line-clamp-2 block text-[15px] leading-tight font-medium md:truncate md:text-[15.5px]">{market.question}</span>
             <span className="num mt-1 flex items-center gap-1.5 overflow-hidden text-[12.5px] whitespace-nowrap text-[var(--dim)]">
               <span className="text-[var(--muted)]">
                 {Math.round(market.price * 100)}% on {market.venue === "kalshi" ? "Kalshi" : "Polymarket"}
@@ -372,6 +375,8 @@ function Lane({ row, index, onOpen }: { row: Row; index: number; onOpen: () => v
 function Mark() {
   return <Image src="/logo.png" alt="" width={24} height={24} priority className="rounded-[7px]" />;
 }
+
+const isPhone = () => typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches;
 
 // Official GitHub mark (Octicons, MIT).
 function GitHubMark() {
