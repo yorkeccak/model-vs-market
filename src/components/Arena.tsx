@@ -1,9 +1,10 @@
 "use client";
 
 import { AnimatePresence, LayoutGroup, motion } from "motion/react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { COLOR, consensus, okPreds, streamEvents, timeAgo, type Preds } from "@/lib/client";
-import { MODELS, MODEL_META, type BoardEvent, type BoardSnapshot, type Market, type PublicSource } from "@/lib/types";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
+import { COLOR, consensus, okPreds, timeAgo, type Preds } from "@/lib/client";
+import { MODELS, MODEL_META, type BoardSnapshot, type Market, type PublicSource } from "@/lib/types";
 import { Detail, type DetailTarget } from "./Detail";
 import { Fav, MarketIcon, ModelLogo } from "./Icon";
 import { Rail } from "./Rail";
@@ -11,7 +12,6 @@ import { Search } from "./Search";
 import { Ticker } from "./Ticker";
 
 type Row = { market: Market; sources: PublicSource[] | null; preds: Preds };
-const STALE_MS = 10 * 60e3;
 const COLS = "md:grid-cols-[minmax(0,0.95fr)_minmax(0,1.3fr)_136px]";
 
 const edgeOf = (r: Row) => {
@@ -19,15 +19,13 @@ const edgeOf = (r: Row) => {
   return c === null ? null : c - r.market.price;
 };
 
-export function Arena({ initial, deferLive }: { initial: BoardSnapshot | null; deferLive?: boolean }) {
-  const [rows, setRows] = useState<Row[]>(() => initial?.rows ?? []);
-  const [updatedAt, setUpdatedAt] = useState<number | null>(initial?.at ?? null);
-  const [running, setRunning] = useState(false);
-  const [sorted, setSorted] = useState(Boolean(initial));
+export function Arena({ initial }: { initial: BoardSnapshot | null }) {
+  const router = useRouter();
+  const [refreshing, startRefresh] = useTransition();
+  const rows = useMemo<Row[]>(() => initial?.rows ?? [], [initial]);
+  const updatedAt = initial?.at ?? null;
   const [detail, setDetail] = useState<DetailTarget | null>(null);
   const [now, setNow] = useState(() => initial?.at ?? 0);
-  const [failed, setFailed] = useState<string | null>(null);
-  const runRef = useRef(false);
 
   useEffect(() => {
     const first = setTimeout(() => setNow(Date.now()), 0);
@@ -38,42 +36,15 @@ export function Arena({ initial, deferLive }: { initial: BoardSnapshot | null; d
     };
   }, []);
 
-  const runLive = useCallback(async () => {
-    if (runRef.current) return;
-    runRef.current = true;
-    setRunning(true);
-    setFailed(null);
-    setSorted(false);
-    try {
-      for await (const e of streamEvents<BoardEvent>("/api/board", {})) {
-        if (e.t === "markets")
-          setRows((prev) => {
-            const old = new Map(prev.map((r) => [r.market.id, r]));
-            return e.markets.map((m) => ({ market: m, sources: old.get(m.id)?.sources ?? null, preds: old.get(m.id)?.preds ?? {} }));
-          });
-        else if (e.t === "sources") setRows((prev) => prev.map((r) => (r.market.id === e.id ? { ...r, sources: e.sources } : r)));
-        else if (e.t === "pred") setRows((prev) => prev.map((r) => (r.market.id === e.id ? { ...r, preds: { ...r.preds, [e.model]: e.pred } } : r)));
-        else if (e.t === "error" && e.id === "*") setFailed(e.message);
-        else if (e.t === "done") {
-          setUpdatedAt(e.at);
-          setNow(Date.now());
-        }
-      }
-    } catch (err) {
-      setFailed((err as Error).message);
-    } finally {
-      runRef.current = false;
-      setRunning(false);
-      setSorted(true);
-    }
-  }, []);
-
+  // Everyone shares one board, refreshed on the server every 15 minutes. Refreshing here only
+  // re-reads that snapshot, so it never triggers model calls. Poll quickly while the first board builds.
+  const refresh = useCallback(() => startRefresh(() => router.refresh()), [router]);
   useEffect(() => {
-    if (deferLive) return;
-    if (!initial || Date.now() - initial.at > STALE_MS) runLive();
-  }, [initial, deferLive, runLive]);
+    const t = setInterval(() => document.visibilityState === "visible" && refresh(), rows.length ? 5 * 60e3 : 8e3);
+    return () => clearInterval(t);
+  }, [refresh, rows.length]);
 
-  const ordered = useMemo(() => (sorted ? [...rows].sort((a, b) => Math.abs(edgeOf(b) ?? -1) - Math.abs(edgeOf(a) ?? -1)) : rows), [rows, sorted]);
+  const ordered = useMemo(() => [...rows].sort((a, b) => Math.abs(edgeOf(b) ?? -1) - Math.abs(edgeOf(a) ?? -1)), [rows]);
 
   const stats = useMemo(() => {
     const preds = rows.flatMap((r) => okPreds(r.preds));
@@ -100,9 +71,9 @@ export function Arena({ initial, deferLive }: { initial: BoardSnapshot | null; d
             <span className="relative h-1.5 w-1.5 rounded-full bg-[var(--decisions)]">
               <span className="absolute inset-0 animate-ping rounded-full bg-[var(--decisions)]" />
             </span>
-            {running ? <span className="dots">Pricing live</span> : updatedAt ? `Updated ${timeAgo(updatedAt, now)}` : "Warming up"}
+            {refreshing ? <span className="dots">Refreshing</span> : updatedAt ? `Updated ${timeAgo(updatedAt, now)}` : <span className="dots">Building the first board</span>}
           </span>
-          <button onClick={runLive} disabled={running} className="press rounded-full px-3 py-1.5 text-[var(--text)] shadow-[inset_0_0_0_1px_var(--line-2)] hover:bg-white/5 disabled:text-[var(--dim)]">
+          <button onClick={refresh} disabled={refreshing} className="press rounded-full px-3 py-1.5 text-[var(--text)] shadow-[inset_0_0_0_1px_var(--line-2)] hover:bg-white/5 disabled:text-[var(--dim)]">
             Refresh
           </button>
         </div>
@@ -134,7 +105,7 @@ export function Arena({ initial, deferLive }: { initial: BoardSnapshot | null; d
             <Detail key={"market" in detail ? detail.market.id : detail.question} target={detail} onClose={close} />
           ) : (
             <motion.div key="field" className="absolute inset-0" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
-              <Field rows={ordered} running={running} failed={failed} onOpen={(r) => setDetail({ market: r.market })} />
+              <Field rows={ordered} running={false} failed={null} onOpen={(r) => setDetail({ market: r.market })} />
             </motion.div>
           )}
         </AnimatePresence>

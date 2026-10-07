@@ -31,7 +31,7 @@ export function Detail({ target, onClose }: { target: DetailTarget; onClose: () 
     startedAt.current = performance.now();
     (async () => {
       try {
-        for await (const e of streamEvents<AnalyzeEvent>("/api/analyze", "market" in target ? { market: target.market } : { question: target.question }, ac.signal)) {
+        for await (const e of streamEvents<AnalyzeEvent>("/api/analyze", "market" in target ? { marketId: target.market.id } : { question: target.question }, ac.signal)) {
           if (e.t === "market") setMarket(e.market);
           else if (e.t === "sources") setSources(e.sources);
           else if (e.t === "step")

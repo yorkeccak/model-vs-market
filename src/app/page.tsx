@@ -1,12 +1,12 @@
 import { Suspense } from "react";
-import { connection } from "next/server";
+import { after, connection } from "next/server";
 import { Arena } from "@/components/Arena";
-import { readBoard } from "@/lib/pipeline";
+import { boardIsStale, readBoard, refreshBoard } from "@/lib/pipeline";
 
-// The shell streams instantly; the last board snapshot (a local file read) fills in right behind it.
+// The shell streams instantly; the shared board snapshot fills in right behind it.
 export default function Page() {
   return (
-    <Suspense fallback={<Arena initial={null} deferLive />}>
+    <Suspense fallback={<Arena initial={null} />}>
       <Board />
     </Suspense>
   );
@@ -14,5 +14,8 @@ export default function Page() {
 
 async function Board() {
   await connection();
-  return <Arena initial={await readBoard()} />;
+  const snapshot = await readBoard();
+  // The cron keeps this fresh; this is only a safety net (locked, so one refresh at a time).
+  if (boardIsStale(snapshot)) after(() => refreshBoard());
+  return <Arena initial={snapshot} />;
 }
