@@ -1,5 +1,7 @@
 # Model vs Market
 
+**Live: [model-vs-market.vercel.app](https://model-vs-market.vercel.app)**
+
 The best way to test AI decision models: make them predict the future.
 
 Three decision models (OpenAI Decisions, TypeSafe Jev, Cloudflare Clef) read recent news, never the odds, and put a probability on any question. The site compares them with live Polymarket and Kalshi prices and replays how each model changed its mind, article by article.
