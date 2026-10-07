@@ -17,7 +17,7 @@ pnpm dev
 | Key                                             | Used for               | Get one                                                                                                     |
 | ----------------------------------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------- |
 | `OPENAI_API_KEY`                                | OpenAI Decisions API   | [platform.openai.com/api-keys](https://platform.openai.com/api-keys)                                        |
-| `VALYU_API_KEY`                                 | News search            | [platform.valyu.ai](https://platform.valyu.ai)                                                              |
+| `VALYU_API_KEY`                                 | Search API             | [platform.valyu.ai](https://platform.valyu.ai)                                                              |
 | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | Clef on Workers AI     | [dash.cloudflare.com/profile/api-tokens](https://dash.cloudflare.com/profile/api-tokens) (Workers AI token) |
 | `TYPESAFE_API_KEY` **or** `AI_GATEWAY_API_KEY`  | Jev (either one works) | [typesafe.ai](https://typesafe.ai) or [Vercel AI Gateway](https://vercel.com/ai-gateway)                    |
 
