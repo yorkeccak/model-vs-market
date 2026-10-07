@@ -3,6 +3,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { COLOR, streamEvents } from "@/lib/client";
+import { SITE_URL } from "@/lib/site";
 import { MODELS, MODEL_META, type AnalyzeEvent, type Market, type ModelId, type Prediction, type PublicSource } from "@/lib/types";
 import { Fav, MarketIcon, ModelLogo, VenueBadge } from "./Icon";
 import { Ticker } from "./Ticker";
@@ -116,8 +117,11 @@ export function Detail({ target, onClose }: { target: DetailTarget; onClose: () 
   })();
 
   const share = () => {
-    const parts = [market ? `Market ${Math.round(market.price * 100)}%` : null, ...MODELS.map((m) => (at(m, n) !== undefined ? `${MODEL_META[m].name} ${Math.round(at(m, n)! * 100)}%` : null))].filter(Boolean);
-    const text = `AI vs the market: "${question}"\n\n${parts.join(" · ")}\n\nThree decision models read the news via @ValyuNetwork, never the odds.`;
+    const lines = [
+      market ? `${market.venue === "kalshi" ? "Kalshi" : "Polymarket"} ${Math.round(market.price * 100)}%` : null,
+      ...MODELS.map((m) => (at(m, n) !== undefined ? `${MODEL_META[m].maker} ${MODEL_META[m].name} ${Math.round(at(m, n)! * 100)}%` : null)),
+    ].filter(Boolean);
+    const text = `${question}\n\n${lines.join("\n")}\n\n${SITE_URL.replace(/^https?:\/\//, "")}`;
     window.open(`https://x.com/intent/post?text=${encodeURIComponent(text)}`, "_blank", "noopener");
   };
 
