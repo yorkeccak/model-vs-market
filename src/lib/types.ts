@@ -41,19 +41,9 @@ export type BoardRow = {
 
 export type BoardSnapshot = { at: number; rows: BoardRow[] };
 
-// NDJSON events streamed to the client.
-export type BoardEvent =
-  | { t: "markets"; markets: Market[] }
-  | { t: "sources"; id: string; sources: PublicSource[] }
-  | { t: "pred"; id: string; model: ModelId; pred: Prediction }
-  | { t: "error"; id: string; model?: ModelId; message: string }
-  | { t: "done"; at: number };
-
 export type AnalyzeEvent =
   | { t: "market"; market: Market | null }
   | { t: "sources"; sources: PublicSource[] }
   | { t: "step"; model: ModelId; k: number; pred: Prediction }
   | { t: "error"; model?: ModelId; message: string }
   | { t: "done" };
-
-export type AnalyzeInput = { market?: Market; question?: string };

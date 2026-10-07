@@ -7,7 +7,7 @@ import { ModelLogo } from "./Icon";
 
 const fly = { type: "spring" as const, stiffness: 120, damping: 17, mass: 0.8 };
 
-// One lane: bone tick = Polymarket, dots = models, hatching = the spread
+// One lane: white tick = market price, logos = models, hatching = the spread
 // between the crowd and the models' average.
 export function Rail({ market, preds, thinking, delay = 0 }: { market: number; preds: Preds; thinking: boolean; delay?: number }) {
   const avg = consensus(preds);
@@ -41,7 +41,9 @@ export function Rail({ market, preds, thinking, delay = 0 }: { market: number; p
         animate={{ left: `${market * 100}%`, scaleY: 1 }}
         transition={{ scaleY: { duration: 0.35, delay: delay + 0.35, ease: [0.2, 0, 0, 1] }, left: fly }}
       >
-        <span className="val num absolute bottom-[calc(100%+4px)] left-1/2 text-[11.5px] whitespace-nowrap text-[var(--market)]">{Math.round(market * 100)}%</span>
+        <span className="val num absolute bottom-[calc(100%+4px)] left-1/2 text-[11.5px] whitespace-nowrap text-[var(--market)]">
+          {Math.round(market * 100)}%
+        </span>
       </motion.div>
 
       {/* models fly out from the market price */}

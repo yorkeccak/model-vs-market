@@ -6,9 +6,26 @@ const CHARS_PER_SOURCE = 1400;
 
 // Sites whose whole point is the market price. Feeding them in makes the models
 // echo the crowd (tested: "market prices 30%" in context -> model answers 0.30).
-const MARKET_SITES = ["polymarket.com", "kalshi.com", "manifold.markets", "metaculus.com", "predictit.org", "octagonai.co", "oddschecker.com", "betfair.com", "lines.com", "covers.com", "actionnetwork.com", "oddsshark.com", "sportsbookreview.com", "vegasinsider.com"];
-const MARKET_TITLE = /polymarket|kalshi|odds|betting|bettors|prediction market|implied probabilit|forecast(ing)? market|wager|fedwatch|market-implied|futures (imply|pricing|price in)/i;
-const ODDS_SENTENCE = /polymarket|kalshi|manifold|metaculus|predictit|fedwatch|futures (markets? )?(imply|price|pricing|see)|odds|bettors?|betting|prediction markets?|traders (price|see|give|put)|implied (probability|chance)|\d+(\.\d+)?\s?(%|percent|per cent)\s+(chance|probability|likelihood)|(chance|probability|likelihood) of \d+(\.\d+)?\s?(%|percent)/i;
+const MARKET_SITES = [
+  "polymarket.com",
+  "kalshi.com",
+  "manifold.markets",
+  "metaculus.com",
+  "predictit.org",
+  "octagonai.co",
+  "oddschecker.com",
+  "betfair.com",
+  "lines.com",
+  "covers.com",
+  "actionnetwork.com",
+  "oddsshark.com",
+  "sportsbookreview.com",
+  "vegasinsider.com",
+];
+const MARKET_TITLE =
+  /polymarket|kalshi|odds|betting|bettors|prediction market|implied probabilit|forecast(ing)? market|wager|fedwatch|market-implied|futures (imply|pricing|price in)/i;
+const ODDS_SENTENCE =
+  /polymarket|kalshi|manifold|metaculus|predictit|fedwatch|futures (markets? )?(imply|price|pricing|see)|odds|bettors?|betting|prediction markets?|traders (price|see|give|put)|implied (probability|chance)|\d+(\.\d+)?\s?(%|percent|per cent)\s+(chance|probability|likelihood)|(chance|probability|likelihood) of \d+(\.\d+)?\s?(%|percent)/i;
 
 function clean(text: string): string {
   return text
@@ -60,8 +77,12 @@ export async function gatherEvidence(question: string): Promise<Source[]> {
     const url = r.url ?? "";
     const title = clean(r.title ?? "").slice(0, 160);
     const domain = domainOf(url);
-    if (!title || MARKET_SITES.some((d) => domain.endsWith(d)) || /(^|\.)(bet|odds)|sportsbook/.test(domain) || MARKET_TITLE.test(title)) continue;
-    const key = title.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 40);
+    if (!title || MARKET_SITES.some((d) => domain.endsWith(d)) || /(^|\.)(bet|odds)|sportsbook/.test(domain) || MARKET_TITLE.test(title))
+      continue;
+    const key = title
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, "")
+      .slice(0, 40);
     if (seen.has(key)) continue;
     seen.add(key);
     const raw = typeof r.content === "string" ? r.content : JSON.stringify(r.content ?? "");

@@ -1,106 +1,109 @@
 import "server-only";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
+import { createHash } from "node:crypto";
 import { buildState, gatherEvidence, instructionsFor, publicSource } from "./evidence";
+import { kv } from "./kv";
 import { predict } from "./models";
 import { searchMarkets, topMarkets } from "./markets";
-import { MODELS, type AnalyzeEvent, type AnalyzeInput, type BoardEvent, type BoardRow, type BoardSnapshot, type Market, type Source } from "./types";
+import { MODELS, type AnalyzeEvent, type BoardRow, type BoardSnapshot, type Market, type Source } from "./types";
 
 const BOARD_SIZE = 16;
-// Vercel functions can only write to /tmp; locally keep the snapshot in the project.
-const CACHE_FILE = path.join(process.env.VERCEL ? os.tmpdir() : process.cwd(), ".cache", "board.json");
+const BOARD_KEY = "board:v1";
+const BOARD_LOCK = "board:lock";
+const BOARD_STALE_MS = 25 * 60e3;
+const DAY = 86_400;
 
-type Store = {
-  board: BoardSnapshot | null;
-  boardRun: Promise<void> | null;
-  listeners: Set<(e: BoardEvent) => void>;
-  replay: BoardEvent[];
-  sources: Map<string, { at: number; sources: Source[] }>;
-};
-const g = globalThis as unknown as { __mvm?: Store };
-const store: Store = (g.__mvm ??= { board: null, boardRun: null, listeners: new Set(), replay: [], sources: new Map() });
-
-export async function readBoard(): Promise<BoardSnapshot | null> {
-  if (store.board) return store.board;
-  try {
-    store.board = JSON.parse(await readFile(CACHE_FILE, "utf8"));
-  } catch {
-    store.board = null;
-  }
-  return store.board;
-}
+// ---------- evidence (shared, 30 min) ----------
 
 async function cachedEvidence(key: string, question: string): Promise<Source[]> {
-  const hit = store.sources.get(key);
-  if (hit && Date.now() - hit.at < 30 * 60e3) return hit.sources;
+  const k = `ev:${key}`;
+  const hit = (await kv.get(k)) as Source[] | undefined;
+  if (hit) return hit;
   const sources = await gatherEvidence(question);
-  store.sources.set(key, { at: Date.now(), sources });
+  await kv.set(k, sources, { ttl: 1800 });
   return sources;
 }
 
-async function runBoard(emit: (e: BoardEvent) => void) {
-  const markets = await topMarkets(BOARD_SIZE);
-  emit({ t: "markets", markets });
-  const rows: BoardRow[] = markets.map((market) => ({ market, sources: null, preds: {} }));
+// ---------- board: one shared snapshot for every visitor ----------
 
-  await Promise.all(
-    rows.map(async (row) => {
-      const { market } = row;
-      let sources: Source[];
-      try {
-        sources = await cachedEvidence(market.id, market.question);
-      } catch (err) {
-        emit({ t: "error", id: market.id, message: (err as Error).message });
-        sources = [];
-      }
-      row.sources = sources.map(publicSource);
-      emit({ t: "sources", id: market.id, sources: row.sources });
-      const state = buildState(market.question, market, sources);
-      const instructions = instructionsFor(market.question);
-      await Promise.all(
-        MODELS.map(async (model) => {
-          try {
-            const pred = await predict(model, state, instructions);
-            row.preds[model] = pred;
-            emit({ t: "pred", id: market.id, model, pred });
-          } catch (err) {
-            const message = (err as Error).message;
-            row.preds[model] = { error: message };
-            emit({ t: "error", id: market.id, model, message });
-          }
-        }),
-      );
-    }),
-  );
+export const boardIsStale = (snapshot: BoardSnapshot | null) => !snapshot || Date.now() - snapshot.at > BOARD_STALE_MS;
 
-  const snapshot: BoardSnapshot = { at: Date.now(), rows };
-  store.board = snapshot;
-  // The snapshot is a cache, so a failed write must never fail the run.
-  await mkdir(path.dirname(CACHE_FILE), { recursive: true })
-    .then(() => writeFile(CACHE_FILE, JSON.stringify(snapshot)))
-    .catch(() => {});
-  emit({ t: "done", at: snapshot.at });
+export async function readBoard(): Promise<BoardSnapshot | null> {
+  return ((await kv.get(BOARD_KEY)) as BoardSnapshot | undefined) ?? null;
 }
 
-// One board run at a time; late subscribers get the events so far, then live ones.
-export function subscribeBoard(listener: (e: BoardEvent) => void): () => void {
-  if (store.boardRun) for (const e of store.replay) listener(e);
-  store.listeners.add(listener);
-  if (!store.boardRun) {
-    store.replay = [];
-    const emit = (e: BoardEvent) => {
-      store.replay.push(e);
-      for (const l of store.listeners) l(e);
-    };
-    store.boardRun = runBoard(emit)
-      .catch((err) => emit({ t: "error", id: "*", message: (err as Error).message }))
-      .finally(() => {
-        store.boardRun = null;
-        if (store.replay.at(-1)?.t !== "done") emit({ t: "done", at: Date.now() });
-      });
-  }
-  return () => store.listeners.delete(listener);
+async function computeBoard(): Promise<BoardSnapshot> {
+  const markets = await topMarkets(BOARD_SIZE);
+  const rows: BoardRow[] = await Promise.all(
+    markets.map(async (market) => {
+      // Remember board markets so /api/analyze can resolve them by id.
+      await kv.set(`m:${market.id}`, market, { ttl: DAY });
+      const sources = await cachedEvidence(market.id, market.question).catch(() => []);
+      const state = buildState(market.question, market, sources);
+      const instructions = instructionsFor(market.question);
+      const preds: BoardRow["preds"] = {};
+      await Promise.all(
+        MODELS.map(async (model) => {
+          preds[model] = await predict(model, state, instructions).catch((err: Error) => ({ error: err.message }));
+        }),
+      );
+      return { market, sources: sources.map(publicSource), preds };
+    }),
+  );
+  return { at: Date.now(), rows };
+}
+
+let inflight: Promise<BoardSnapshot> | null = null;
+
+// Recompute and publish the board. The lock keeps concurrent instances from
+// paying for the same refresh; `force` is for the scheduled job.
+export async function refreshBoard({ force = false } = {}): Promise<BoardSnapshot | null> {
+  if (inflight) return inflight;
+  if (!force && (await kv.get(BOARD_LOCK))) return null;
+  await kv.set(BOARD_LOCK, Date.now(), { ttl: 180 });
+  inflight = computeBoard()
+    .then(async (snapshot) => {
+      await kv.set(BOARD_KEY, snapshot, { ttl: 2 * DAY });
+      return snapshot;
+    })
+    .finally(() => {
+      inflight = null;
+      void kv.delete(BOARD_LOCK);
+    });
+  return inflight;
+}
+
+// ---------- analyze ----------
+
+// Markets are only ever resolved server-side (board or search results), so a client
+// can't inject a fake question or rules under a real market id.
+export async function resolveMarket(id: string): Promise<Market | null> {
+  const fromKv = (await kv.get(`m:${id}`)) as Market | undefined;
+  if (fromKv) return fromKv;
+  return (await readBoard())?.rows.find((r) => r.market.id === id)?.market ?? null;
+}
+
+export async function rememberMarkets(markets: Market[]) {
+  await Promise.all(markets.map((m) => kv.set(`m:${m.id}`, m, { ttl: DAY })));
+}
+
+const normalise = (q: string) =>
+  q
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(/[?!.\s]+$/, "")
+    .trim();
+
+export function analyzeKey(input: { marketId?: string; question?: string }) {
+  const raw = input.marketId ? `m:${input.marketId}` : `q:${normalise(input.question ?? "")}`;
+  return `an:${createHash("sha256").update(raw).digest("hex")}`;
+}
+
+export async function cachedAnalysis(key: string): Promise<AnalyzeEvent[] | null> {
+  return ((await kv.get(key)) as AnalyzeEvent[] | undefined) ?? null;
+}
+
+export async function storeAnalysis(key: string, events: AnalyzeEvent[], ttl: number) {
+  await kv.set(key, events, { ttl });
 }
 
 // Use the decision model itself to pick which live market (if any) the question is about.
@@ -117,7 +120,8 @@ async function matchMarket(question: string): Promise<Market | null> {
         {
           type: "choice",
           name: "market",
-          instructions: "Which prediction market asks essentially the same yes/no question as the user (same event, same deadline give or take)? Pick none if no market matches.",
+          instructions:
+            "Which prediction market asks essentially the same yes/no question as the user (same event, same deadline give or take)? Pick none if no market matches.",
           choices: [
             ...candidates.map((m) => ({ value: m.id, description: `${m.question} (resolves ${m.endDate.slice(0, 10)})` })),
             { value: "none", description: "None of these match the user's question." },
@@ -134,18 +138,18 @@ async function matchMarket(question: string): Promise<Market | null> {
   return top >= 0.6 ? (candidates.find((m) => m.id === answer.choice) ?? null) : null;
 }
 
-export async function runAnalyze(input: AnalyzeInput, emit: (e: AnalyzeEvent) => void) {
+export async function runAnalyze(input: { market?: Market; question?: string }, emit: (e: AnalyzeEvent) => void) {
   const question = (input.market?.question ?? input.question ?? "").trim();
   if (!question) throw new Error("Ask a question");
 
   const [market, sources] = await Promise.all([
     input.market ? Promise.resolve(input.market) : matchMarket(question),
-    cachedEvidence(input.market?.id ?? `q:${question.toLowerCase()}`, question),
+    cachedEvidence(input.market?.id ?? `q:${normalise(question)}`, question),
   ]);
   emit({ t: "market", market });
   emit({ t: "sources", sources: sources.map(publicSource) });
 
-  // Re-decide after each additional source: k=0 is the prior, k=N is the final call.
+  // Re-decide with articles 1..k for each k: k=0 is the prior, k=N is the final call.
   const instructions = instructionsFor(question);
   const steps = Array.from({ length: sources.length + 1 }, (_, k) => buildState(question, market, sources.slice(0, k)));
   await Promise.all(

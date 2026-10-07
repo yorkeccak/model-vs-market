@@ -3,3 +3,4 @@ export const SITE_NAME = "Model vs Market";
 export const SITE_TITLE = "Model vs Market - Can AI out-guess the market?";
 export const SITE_DESCRIPTION =
   "Decision models from OpenAI, TypeSafe and Cloudflare read today's news, never the odds, and put a probability on any question. Watch them change their minds article by article, then compare them with live Polymarket and Kalshi prices.";
+export const REPO_URL = "https://github.com/yorkeccak/model-vs-market";

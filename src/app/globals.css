@@ -101,7 +101,9 @@
 }
 
 .lane {
-  transition: opacity 220ms var(--ease), background-color 220ms var(--ease);
+  transition:
+    opacity 220ms var(--ease),
+    background-color 220ms var(--ease);
 }
 
 .lane:hover {
@@ -123,7 +125,9 @@
 .lane .val {
   opacity: 0;
   transform: translate(-50%, 4px);
-  transition: opacity 180ms var(--ease), transform 180ms var(--ease);
+  transition:
+    opacity 180ms var(--ease),
+    transform 180ms var(--ease);
 }
 
 .lane:hover .val {

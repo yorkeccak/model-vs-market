@@ -46,8 +46,16 @@ async function clef(state: string, instructions: string) {
   return { p: clamp01(json.result?.answers?.yes?.noul), tokens: json.result?.usage?.input_tokens ?? 0 };
 }
 
-// TypeSafe Jev through Vercel AI Gateway.
+// TypeSafe Jev: direct API when TYPESAFE_API_KEY is set, otherwise Vercel AI Gateway.
 async function jev(state: string, instructions: string) {
+  if (process.env.TYPESAFE_API_KEY) {
+    const json = await postJson(
+      "https://api.typesafe.ai/v1/systemone",
+      { Authorization: `Bearer ${process.env.TYPESAFE_API_KEY}` },
+      { model: "jev-latest", state, questions: { yes: { type: "noul", instructions } } },
+    );
+    return { p: clamp01(json.answers?.yes?.noul), tokens: json.usage?.input_tokens ?? 0 };
+  }
   const res = await experimental_decide({
     model: "typesafe-ai/jev",
     state,

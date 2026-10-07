@@ -1,9 +1,11 @@
 "use client";
 
 import { AnimatePresence, LayoutGroup, motion } from "motion/react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { COLOR, consensus, okPreds, streamEvents, timeAgo, type Preds } from "@/lib/client";
-import { MODELS, MODEL_META, type BoardEvent, type BoardSnapshot, type Market, type PublicSource } from "@/lib/types";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
+import { COLOR, consensus, okPreds, timeAgo, type Preds } from "@/lib/client";
+import { REPO_URL } from "@/lib/site";
+import { MODELS, MODEL_META, type BoardSnapshot, type Market, type PublicSource } from "@/lib/types";
 import { Detail, type DetailTarget } from "./Detail";
 import { Fav, MarketIcon, ModelLogo } from "./Icon";
 import { Rail } from "./Rail";
@@ -11,7 +13,6 @@ import { Search } from "./Search";
 import { Ticker } from "./Ticker";
 
 type Row = { market: Market; sources: PublicSource[] | null; preds: Preds };
-const STALE_MS = 10 * 60e3;
 const COLS = "md:grid-cols-[minmax(0,0.95fr)_minmax(0,1.3fr)_136px]";
 
 const edgeOf = (r: Row) => {
@@ -19,15 +20,13 @@ const edgeOf = (r: Row) => {
   return c === null ? null : c - r.market.price;
 };
 
-export function Arena({ initial, deferLive }: { initial: BoardSnapshot | null; deferLive?: boolean }) {
-  const [rows, setRows] = useState<Row[]>(() => initial?.rows ?? []);
-  const [updatedAt, setUpdatedAt] = useState<number | null>(initial?.at ?? null);
-  const [running, setRunning] = useState(false);
-  const [sorted, setSorted] = useState(Boolean(initial));
+export function Arena({ initial }: { initial: BoardSnapshot | null }) {
+  const router = useRouter();
+  const [refreshing, startRefresh] = useTransition();
+  const rows = useMemo<Row[]>(() => initial?.rows ?? [], [initial]);
+  const updatedAt = initial?.at ?? null;
   const [detail, setDetail] = useState<DetailTarget | null>(null);
   const [now, setNow] = useState(() => initial?.at ?? 0);
-  const [failed, setFailed] = useState<string | null>(null);
-  const runRef = useRef(false);
 
   useEffect(() => {
     const first = setTimeout(() => setNow(Date.now()), 0);
@@ -38,42 +37,15 @@ export function Arena({ initial, deferLive }: { initial: BoardSnapshot | null; d
     };
   }, []);
 
-  const runLive = useCallback(async () => {
-    if (runRef.current) return;
-    runRef.current = true;
-    setRunning(true);
-    setFailed(null);
-    setSorted(false);
-    try {
-      for await (const e of streamEvents<BoardEvent>("/api/board", {})) {
-        if (e.t === "markets")
-          setRows((prev) => {
-            const old = new Map(prev.map((r) => [r.market.id, r]));
-            return e.markets.map((m) => ({ market: m, sources: old.get(m.id)?.sources ?? null, preds: old.get(m.id)?.preds ?? {} }));
-          });
-        else if (e.t === "sources") setRows((prev) => prev.map((r) => (r.market.id === e.id ? { ...r, sources: e.sources } : r)));
-        else if (e.t === "pred") setRows((prev) => prev.map((r) => (r.market.id === e.id ? { ...r, preds: { ...r.preds, [e.model]: e.pred } } : r)));
-        else if (e.t === "error" && e.id === "*") setFailed(e.message);
-        else if (e.t === "done") {
-          setUpdatedAt(e.at);
-          setNow(Date.now());
-        }
-      }
-    } catch (err) {
-      setFailed((err as Error).message);
-    } finally {
-      runRef.current = false;
-      setRunning(false);
-      setSorted(true);
-    }
-  }, []);
-
+  // Everyone shares one board, refreshed on the server every 15 minutes. Refreshing here only
+  // re-reads that snapshot, so it never triggers model calls. Poll quickly while the first board builds.
+  const refresh = useCallback(() => startRefresh(() => router.refresh()), [router]);
   useEffect(() => {
-    if (deferLive) return;
-    if (!initial || Date.now() - initial.at > STALE_MS) runLive();
-  }, [initial, deferLive, runLive]);
+    const t = setInterval(() => document.visibilityState === "visible" && refresh(), rows.length ? 5 * 60e3 : 8e3);
+    return () => clearInterval(t);
+  }, [refresh, rows.length]);
 
-  const ordered = useMemo(() => (sorted ? [...rows].sort((a, b) => Math.abs(edgeOf(b) ?? -1) - Math.abs(edgeOf(a) ?? -1)) : rows), [rows, sorted]);
+  const ordered = useMemo(() => [...rows].sort((a, b) => Math.abs(edgeOf(b) ?? -1) - Math.abs(edgeOf(a) ?? -1)), [rows]);
 
   const stats = useMemo(() => {
     const preds = rows.flatMap((r) => okPreds(r.preds));
@@ -100,9 +72,29 @@ export function Arena({ initial, deferLive }: { initial: BoardSnapshot | null; d
             <span className="relative h-1.5 w-1.5 rounded-full bg-[var(--decisions)]">
               <span className="absolute inset-0 animate-ping rounded-full bg-[var(--decisions)]" />
             </span>
-            {running ? <span className="dots">Pricing live</span> : updatedAt ? `Updated ${timeAgo(updatedAt, now)}` : "Warming up"}
+            {refreshing ? (
+              <span className="dots">Refreshing</span>
+            ) : updatedAt ? (
+              `Updated ${timeAgo(updatedAt, now)}`
+            ) : (
+              <span className="dots">Building the first board</span>
+            )}
           </span>
-          <button onClick={runLive} disabled={running} className="press rounded-full px-3 py-1.5 text-[var(--text)] shadow-[inset_0_0_0_1px_var(--line-2)] hover:bg-white/5 disabled:text-[var(--dim)]">
+          <a
+            href={REPO_URL}
+            target="_blank"
+            rel="noreferrer"
+            aria-label="View the source on GitHub"
+            className="press inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[var(--text)] shadow-[inset_0_0_0_1px_var(--line-2)] hover:bg-white/5"
+          >
+            <GitHubMark />
+            <span className="hidden sm:inline">GitHub</span>
+          </a>
+          <button
+            onClick={refresh}
+            disabled={refreshing}
+            className="press rounded-full px-3 py-1.5 text-[var(--text)] shadow-[inset_0_0_0_1px_var(--line-2)] hover:bg-white/5 disabled:text-[var(--dim)]"
+          >
             Refresh
           </button>
         </div>
@@ -111,12 +103,25 @@ export function Arena({ initial, deferLive }: { initial: BoardSnapshot | null; d
       <section className="pb-4">
         <AnimatePresence initial={false}>
           {!detail && (
-            <motion.div key="hero" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.3, ease: [0.2, 0, 0, 1] }} className="overflow-hidden">
+            <motion.div
+              key="hero"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.3, ease: [0.2, 0, 0, 1] }}
+              className="overflow-hidden"
+            >
               <div className="flex flex-wrap items-end justify-between gap-x-10 gap-y-2 pt-3 pb-5">
                 <div>
-                  <h1 className="rise text-[34px] leading-[1.02] font-semibold tracking-[-0.03em] md:text-[48px]">Can AI out-guess the market?</h1>
-                  <p className="rise mt-2 max-w-[600px] text-[15.5px] text-[var(--muted)] md:text-[17px]" style={{ animationDelay: "0.1s" }}>
-                    Decision models from <Brand m="decisions" />, <Brand m="jev" /> and <Brand m="clef" /> read today&apos;s news, never the odds, and put a probability on any question. Then we compare them with real-money markets.
+                  <h1 className="rise text-[34px] leading-[1.02] font-semibold tracking-[-0.03em] md:text-[48px]">
+                    Can AI out-guess the market?
+                  </h1>
+                  <p
+                    className="rise mt-2 max-w-[600px] text-[15.5px] text-[var(--muted)] md:text-[17px]"
+                    style={{ animationDelay: "0.1s" }}
+                  >
+                    Decision models from <Brand m="decisions" />, <Brand m="jev" /> and <Brand m="clef" /> read today&apos;s news, never the
+                    odds, and put a probability on any question. Then we compare them with real-money markets.
                   </p>
                 </div>
               </div>
@@ -133,8 +138,15 @@ export function Arena({ initial, deferLive }: { initial: BoardSnapshot | null; d
           {detail ? (
             <Detail key={"market" in detail ? detail.market.id : detail.question} target={detail} onClose={close} />
           ) : (
-            <motion.div key="field" className="absolute inset-0" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
-              <Field rows={ordered} running={running} failed={failed} onOpen={(r) => setDetail({ market: r.market })} />
+            <motion.div
+              key="field"
+              className="absolute inset-0"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+            >
+              <Field rows={ordered} onOpen={(r) => setDetail({ market: r.market })} />
             </motion.div>
           )}
         </AnimatePresence>
@@ -142,7 +154,10 @@ export function Arena({ initial, deferLive }: { initial: BoardSnapshot | null; d
 
       <footer className="flex h-11 items-center justify-between gap-4 text-[12.5px] text-[var(--dim)]">
         <span className="flex items-center gap-1.5">
-          News by <Fav domain="valyu.ai" size={13} /> <a href="https://valyu.ai" className="text-[var(--muted)] hover:text-[var(--text)]">Valyu</a>
+          News by <Fav domain="valyu.ai" size={13} />{" "}
+          <a href="https://valyu.ai" className="text-[var(--muted)] hover:text-[var(--text)]">
+            Valyu
+          </a>
           <span className="hidden md:inline">· Models never see market prices · Not financial advice</span>
         </span>
         <span className="num hidden items-center gap-3 lg:flex">
@@ -173,7 +188,7 @@ function Stat({ v, label, f = (x) => String(Math.round(x)) }: { v: number; label
   );
 }
 
-function Field({ rows, running, failed, onOpen }: { rows: Row[]; running: boolean; failed: string | null; onOpen: (r: Row) => void }) {
+function Field({ rows, onOpen }: { rows: Row[]; onOpen: (r: Row) => void }) {
   const ref = useRef<HTMLOListElement>(null);
   const [fit, setFit] = useState(8);
   useLayoutEffect(() => {
@@ -187,10 +202,10 @@ function Field({ rows, running, failed, onOpen }: { rows: Row[]; running: boolea
 
   return (
     <div className="field flex h-full flex-col">
-      <div className={`grid h-12 shrink-0 items-center gap-x-6 border-b border-[var(--line)] px-4 text-[13px] text-[var(--muted)] md:px-5 ${COLS}`}>
-        <span className="font-medium text-[var(--text)]">
-          Most-traded questions right now {failed && <span className="ml-2 font-normal text-[var(--clef)]">· {failed}</span>}
-        </span>
+      <div
+        className={`grid h-12 shrink-0 items-center gap-x-6 border-b border-[var(--line)] px-4 text-[13px] text-[var(--muted)] md:px-5 ${COLS}`}
+      >
+        <span className="font-medium text-[var(--text)]">Most-traded questions right now</span>
         <span className="hidden items-center justify-between md:flex">
           <span className="num text-[var(--dim)]">0%</span>
           <span className="flex items-center gap-4">
@@ -214,7 +229,7 @@ function Field({ rows, running, failed, onOpen }: { rows: Row[]; running: boolea
       <LayoutGroup>
         <ol ref={ref} className="grid min-h-0 flex-1" style={{ gridTemplateRows: `repeat(${count}, minmax(0, 1fr))` }}>
           {visible
-            ? visible.map((r, i) => <Lane key={r.market.id} row={r} index={i} running={running} onOpen={() => onOpen(r)} />)
+            ? visible.map((r, i) => <Lane key={r.market.id} row={r} index={i} onOpen={() => onOpen(r)} />)
             : Array.from({ length: count }).map((_, i) => (
                 <li key={i} className={`grid items-center gap-x-6 border-b border-[var(--line)] px-4 last:border-b-0 md:px-5 ${COLS}`}>
                   <span className="flex items-center gap-3">
@@ -231,25 +246,34 @@ function Field({ rows, running, failed, onOpen }: { rows: Row[]; running: boolea
   );
 }
 
-function Lane({ row, index, running, onOpen }: { row: Row; index: number; running: boolean; onOpen: () => void }) {
+function Lane({ row, index, onOpen }: { row: Row; index: number; onOpen: () => void }) {
   const { market, preds, sources } = row;
   const edge = edgeOf(row);
   const ok = okPreds(preds);
-  const thinking = (running && ok.length < MODELS.length) || sources === null;
+  const thinking = sources === null;
   const pts = edge === null ? null : Math.round(edge * 100);
   const end = market.endDate ? new Date(market.endDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "";
   const delay = Math.min(index, 14) * 0.06;
   const tone = pts === null || Math.abs(pts) < 8 ? "var(--muted)" : pts > 0 ? "var(--decisions)" : "var(--clef)";
 
   return (
-    <motion.li layout="position" transition={{ layout: { type: "spring", stiffness: 300, damping: 34 } }} className="lane min-h-0 border-b border-[var(--line)] last:border-b-0">
-      <button onClick={onOpen} className={`grid h-full w-full grid-cols-[minmax(0,1fr)_auto] content-center items-center gap-x-6 gap-y-1.5 px-4 text-left md:px-5 ${COLS}`}>
+    <motion.li
+      layout="position"
+      transition={{ layout: { type: "spring", stiffness: 300, damping: 34 } }}
+      className="lane min-h-0 border-b border-[var(--line)] last:border-b-0"
+    >
+      <button
+        onClick={onOpen}
+        className={`grid h-full w-full grid-cols-[minmax(0,1fr)_auto] content-center items-center gap-x-6 gap-y-1.5 px-4 text-left md:px-5 ${COLS}`}
+      >
         <span className="flex min-w-0 items-center gap-3">
           <MarketIcon market={market} size={34} />
           <span className="min-w-0">
             <span className="block truncate text-[15.5px] leading-tight font-medium">{market.question}</span>
             <span className="num mt-1 flex items-center gap-1.5 text-[12.5px] text-[var(--dim)]">
-              <span className="text-[var(--muted)]">{Math.round(market.price * 100)}% on {market.venue === "kalshi" ? "Kalshi" : "Polymarket"}</span>
+              <span className="text-[var(--muted)]">
+                {Math.round(market.price * 100)}% on {market.venue === "kalshi" ? "Kalshi" : "Polymarket"}
+              </span>
               <span>·</span>
               {sources === null ? (
                 <span className="dots">Reading the news</span>
@@ -257,7 +281,13 @@ function Lane({ row, index, running, onOpen }: { row: Row; index: number; runnin
                 <span className="flex items-center gap-1">
                   <span className="flex">
                     {sources.slice(0, 5).map((s, i) => (
-                      <motion.span key={s.domain + i} className="-mr-1 rounded-full ring-2 ring-[var(--surface)]" initial={{ opacity: 0, scale: 0.4 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: delay + 0.2 + i * 0.05, type: "spring", duration: 0.35, bounce: 0 }}>
+                      <motion.span
+                        key={s.domain + i}
+                        className="-mr-1 rounded-full ring-2 ring-[var(--surface)]"
+                        initial={{ opacity: 0, scale: 0.4 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ delay: delay + 0.2 + i * 0.05, type: "spring", duration: 0.35, bounce: 0 }}
+                      >
                         <Fav domain={s.domain} size={14} className="rounded-full bg-[var(--surface)]" />
                       </motion.span>
                     ))}
@@ -283,7 +313,13 @@ function Lane({ row, index, running, onOpen }: { row: Row; index: number; runnin
           ) : (
             <span className="block">
               <span style={{ color: tone }}>
-                <Ticker value={pts} format={(v) => `${v > 0 ? "+" : ""}${Math.round(v)}`} className="num block text-[22px] leading-none font-medium tracking-[-0.02em]" duration={0.9} delay={delay + 0.6} />
+                <Ticker
+                  value={pts}
+                  format={(v) => `${v > 0 ? "+" : ""}${Math.round(v)}`}
+                  className="num block text-[22px] leading-none font-medium tracking-[-0.02em]"
+                  duration={0.9}
+                  delay={delay + 0.6}
+                />
               </span>
               <span className="mt-1.5 flex h-4 items-center justify-end text-[12px] whitespace-nowrap text-[var(--dim)]">
                 <span className="lane-a">{Math.abs(pts) < 8 ? "Agree" : pts > 0 ? "AI higher" : "AI lower"}</span>
@@ -310,6 +346,15 @@ function Mark() {
       <rect x="0.5" y="0.5" width="21" height="21" rx="7" fill="var(--surface-2)" stroke="var(--line-2)" />
       <path d="M5 11h12" stroke="var(--text)" strokeOpacity="0.45" strokeDasharray="1.5 2" />
       <path d="M5 14.5l3.2-4 2.6 2 3-5.5L17 9" stroke="var(--decisions)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+// Official GitHub mark (Octicons, MIT).
+function GitHubMark() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
+      <path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z" />
     </svg>
   );
 }
