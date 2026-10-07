@@ -28,13 +28,20 @@
 
   html,
   body {
-    height: 100%;
     margin: 0;
-    overflow: hidden;
     background: var(--bg);
     color: var(--text);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Desktop is a single fixed-viewport screen; phones scroll normally. */
+  @media (min-width: 48rem) {
+    html,
+    body {
+      height: 100%;
+      overflow: hidden;
+    }
   }
 
   body {
