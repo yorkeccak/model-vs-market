@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@ai-sdk/gateway": "^4.0.106",
+    "@vercel/analytics": "^2.0.1",
     "@vercel/functions": "^3.9.11",
     "ai": "^7.0.130",
     "motion": "^14.0.0",
