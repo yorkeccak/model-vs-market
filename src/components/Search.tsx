@@ -3,6 +3,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useId, useRef, useState } from "react";
 import { friendlyStatus } from "@/lib/client";
+import { track } from "@/lib/track";
 import type { Market } from "@/lib/types";
 import { MarketIcon, VenueBadge } from "./Icon";
 
@@ -99,8 +100,14 @@ export function Search({ onPick, compact }: { onPick: (c: Choice) => void; compa
   const pick = (c: Choice) => {
     setOpen(false);
     inputRef.current?.blur();
-    if (c.kind === "ask") onPick({ kind: "ask", question: c.question.endsWith("?") ? c.question : `${c.question}?` });
-    else onPick(c);
+    if (c.kind === "ask") {
+      const question = c.question.endsWith("?") ? c.question : `${c.question}?`;
+      track("Ask", { question, example: query.length < 3 });
+      onPick({ kind: "ask", question });
+    } else {
+      track("Open market", { from: "search", venue: c.market.venue, question: c.market.question });
+      onPick(c);
+    }
   };
 
   return (

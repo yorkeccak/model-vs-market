@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { COLOR, streamEvents } from "@/lib/client";
 import { SITE_URL } from "@/lib/site";
+import { track } from "@/lib/track";
 import { MODELS, MODEL_META, type AnalyzeEvent, type Market, type ModelId, type Prediction, type PublicSource } from "@/lib/types";
 import { Fav, MarketIcon, ModelLogo, VenueBadge } from "./Icon";
 import { Ticker } from "./Ticker";
@@ -47,22 +48,34 @@ export function Detail({ target, onClose }: { target: DetailTarget; onClose: () 
               return next;
             });
           else if (e.t === "error") {
-            if (e.model) setSkipped((x) => [...x, e.model!]);
-            else setFatal(e.message);
+            if (e.model) {
+              setSkipped((x) => [...x, e.model!]);
+              track("Model skipped", { model: e.model, question });
+            } else {
+              setFatal(e.message);
+              track("Analysis failed", { message: e.message, question });
+            }
           } else if (e.t === "done") {
+            const ms = Math.round(performance.now() - startedAt.current);
             setDone(true);
             setPlay(0);
-            setElapsed(performance.now() - startedAt.current);
+            setElapsed(ms);
+            track("Analysis done", { kind: "market" in target ? "market" : "ask", ms, question });
           }
         }
       } catch (err) {
-        if (!ac.signal.aborted) setFatal((err as Error).message);
+        if (!ac.signal.aborted) {
+          setFatal((err as Error).message);
+          track("Analysis failed", { message: (err as Error).message, question });
+        }
       }
     })();
     return () => ac.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- question derives from target
   }, [target, attempt]);
 
   const retry = () => {
+    track("Retry", { question });
     setFatal(null);
     setSkipped([]);
     setSources(null);
@@ -145,11 +158,17 @@ export function Detail({ target, onClose }: { target: DetailTarget; onClose: () 
       ),
     ].filter(Boolean);
     const text = `${question}\n\n${lines.join("\n")}\n\n${SITE_URL.replace(/^https?:\/\//, "")}`;
+    track("Share", { question, venue: market?.venue ?? null });
     window.open(`https://x.com/intent/post?text=${encodeURIComponent(text)}`, "_blank", "noopener");
   };
 
+  const scrubbed = useRef(false);
   const scrub = (k: number) => {
     if (!done) return;
+    if (!scrubbed.current) {
+      scrubbed.current = true;
+      track("Explore evidence", { question });
+    }
     setAuto(false);
     setPlay(k);
   };
@@ -282,6 +301,7 @@ export function Detail({ target, onClose }: { target: DetailTarget; onClose: () 
           {play >= n && n > 0 && (
             <button
               onClick={() => {
+                track("Replay", { question });
                 setAuto(true);
                 setPlay(0);
               }}
@@ -295,6 +315,7 @@ export function Detail({ target, onClose }: { target: DetailTarget; onClose: () 
               href={market.url}
               target="_blank"
               rel="noreferrer"
+              onClick={() => track("Outbound", { to: market.venue, from: "detail", question })}
               className="press rounded-full px-3 py-1.5 text-[13.5px] text-[var(--muted)] hover:bg-white/5 hover:text-[var(--text)]"
             >
               Open on {market.venue === "kalshi" ? "Kalshi" : "Polymarket"} ↗

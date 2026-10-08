@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition, type CSSProperties } from "react";
 import { COLOR, consensus, okPreds, timeAgo, type Preds } from "@/lib/client";
 import { REPO_URL } from "@/lib/site";
+import { track } from "@/lib/track";
 import { MODELS, MODEL_META, type BoardSnapshot, type Market, type PublicSource } from "@/lib/types";
 import { Detail, type DetailTarget } from "./Detail";
 import { ValyuLockup, ValyuMark } from "./ValyuLogo";
@@ -90,6 +91,7 @@ export function Arena({ initial }: { initial: BoardSnapshot | null }) {
             target="_blank"
             rel="noreferrer"
             aria-label="View the source on GitHub"
+            onClick={() => track("Outbound", { to: "github", from: "header" })}
             className="press inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[var(--text)] shadow-[inset_0_0_0_1px_var(--line-2)] hover:bg-white/5"
           >
             <GitHubMark />
@@ -100,6 +102,7 @@ export function Arena({ initial }: { initial: BoardSnapshot | null }) {
             target="_blank"
             rel="noreferrer"
             aria-label="Powered by Valyu"
+            onClick={() => track("Outbound", { to: "valyu", from: "header" })}
             className="press inline-flex items-center gap-2 rounded-full bg-[var(--text)] px-3.5 py-1.5 text-[var(--bg)] hover:bg-white"
           >
             <span className="hidden text-[12.5px] sm:inline">Powered by</span>
@@ -156,7 +159,13 @@ export function Arena({ initial }: { initial: BoardSnapshot | null }) {
               exit={{ opacity: 0, transition: { duration: isPhone() ? 0 : 0.2 } }}
               transition={{ duration: 0.2 }}
             >
-              <Field rows={ordered} onOpen={(r) => setDetail({ market: r.market })} />
+              <Field
+                rows={ordered}
+                onOpen={(r) => {
+                  track("Open market", { from: "board", venue: r.market.venue, question: r.market.question });
+                  setDetail({ market: r.market });
+                }}
+              />
             </motion.div>
           )}
         </AnimatePresence>
@@ -169,6 +178,7 @@ export function Arena({ initial }: { initial: BoardSnapshot | null }) {
             href="https://valyu.ai"
             target="_blank"
             rel="noreferrer"
+            onClick={() => track("Outbound", { to: "valyu", from: "footer" })}
             className="inline-flex items-center gap-1.5 text-[var(--muted)] hover:text-[var(--text)]"
           >
             <ValyuMark className="h-3 w-3" />
