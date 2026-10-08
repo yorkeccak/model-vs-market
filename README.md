@@ -27,12 +27,12 @@ Jev uses TypeSafe's API directly when `TYPESAFE_API_KEY` is set, otherwise it go
 
 ## Powered by Valyu
 
-All evidence comes from [Valyu](https://valyu.ai), the search and research API for knowledge work. It excels at deep research across financial services, forecasting and the sciences, combining the live web with proprietary sources like SEC filings, financial data, academic papers and clinical trials.
+All evidence comes from [Valyu](https://platform.valyu.ai), the search and research API for knowledge work. It excels at deep research across financial services, forecasting and the sciences, combining the live web with proprietary sources like SEC filings, financial data, academic papers and clinical trials.
 
 ## How it works
 
 1. **Markets.** The board pulls the most-traded open questions from Polymarket. Search covers Polymarket and Kalshi, or you can ask your own question.
-2. **Evidence.** [Valyu](https://valyu.ai) search finds the last 60 days of news. Anything quoting odds or betting markets is removed first, because these models copy the market price if they can see it.
+2. **Evidence.** [Valyu](https://platform.valyu.ai) search finds the last 60 days of news. Anything quoting odds or betting markets is removed first, because these models copy the market price if they can see it.
 3. **Decisions.** Each model returns P(YES), then is asked again with articles 1..k for every k. That replay shows which article moved which model.
 
 ## Deploy
