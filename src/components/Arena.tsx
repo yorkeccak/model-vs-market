@@ -5,7 +5,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition, type CSSProperties } from "react";
 import { COLOR, consensus, okPreds, timeAgo, type Preds } from "@/lib/client";
-import { REPO_URL } from "@/lib/site";
+import { REPO_URL, VALYU_URL } from "@/lib/site";
 import { track } from "@/lib/track";
 import { MODELS, MODEL_META, type BoardSnapshot, type Market, type PublicSource } from "@/lib/types";
 import { Detail, type DetailTarget } from "./Detail";
@@ -98,7 +98,7 @@ export function Arena({ initial }: { initial: BoardSnapshot | null }) {
             <span className="hidden sm:inline">GitHub</span>
           </a>
           <a
-            href="https://valyu.ai"
+            href={VALYU_URL}
             target="_blank"
             rel="noreferrer"
             aria-label="Powered by Valyu"
@@ -175,7 +175,7 @@ export function Arena({ initial }: { initial: BoardSnapshot | null }) {
         <span className="flex items-center gap-1.5">
           Search powered by
           <a
-            href="https://valyu.ai"
+            href={VALYU_URL}
             target="_blank"
             rel="noreferrer"
             onClick={() => track("Outbound", { to: "valyu", from: "footer" })}

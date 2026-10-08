@@ -3,7 +3,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { COLOR, streamEvents } from "@/lib/client";
-import { SITE_URL } from "@/lib/site";
+import { SITE_URL, VALYU_URL } from "@/lib/site";
 import { track } from "@/lib/track";
 import { MODELS, MODEL_META, type AnalyzeEvent, type Market, type ModelId, type Prediction, type PublicSource } from "@/lib/types";
 import { Fav, MarketIcon, ModelLogo, VenueBadge } from "./Icon";
@@ -651,9 +651,15 @@ function Sources({ sources, play, done, biggest, delta, onScrub }: SourcesProps)
     <div className="flex min-h-0 flex-col border-t border-[var(--line)] md:border-t-0">
       <div className="flex items-center justify-between px-5 pt-4 pb-2 text-[13px]">
         <span className="font-medium">What they read</span>
-        <span className="flex items-center gap-1.5 text-[var(--dim)]">
+        <a
+          href={VALYU_URL}
+          target="_blank"
+          rel="noreferrer"
+          onClick={() => track("Outbound", { to: "valyu", from: "sources" })}
+          className="flex items-center gap-1.5 text-[var(--dim)] hover:text-[var(--text)]"
+        >
           via <Fav domain="valyu.ai" size={13} /> Valyu
-        </span>
+        </a>
       </div>
       <ol className="min-h-0 flex-1 overflow-y-auto px-2 pb-2 [scrollbar-width:none]">
         {sources === null
